@@ -364,12 +364,22 @@ function movePref(pid,i,dir){
   [prefs[i],prefs[j]]=[prefs[j],prefs[i]];
   if(pid==='@join'){ui.jn.prefs=prefs;render()} else savePlayer(pid,{prefs});
 }
+// names are only labels (players are keyed by id), but two "Alex"es would be impossible to tell apart
+const nameKey=n=>cleanName(n).toLowerCase().replace(/\s+/g,' ');
+function nameTaken(name,exceptId){
+  const k=nameKey(name);
+  const hit=Object.entries(V().players).some(([id,p])=>id!==exceptId&&nameKey(p.name)===k);
+  if(hit){toastMsg=`"${cleanName(name)}" is already in this squad. Pick a different name.`;render()}
+  return hit;
+}
 function rename(pid,name){
   const p=V().players[pid]; name=cleanName(name); if(!p||!name||name===p.name) return;
+  if(nameTaken(name,pid)) return;
   savePlayer(pid,{name});
 }
 function joinSquad(){
   const name=cleanName(ui.jn.name), id=me(); if(!name||!id) return;
+  if(nameTaken(name,id)) return;
   const st=V();
   write('players/'+id,{name,prefs:[...ui.jn.prefs],avoid:[],created:Date.now()});
   const a=activeIds(st); if(a.length<5&&!a.includes(id)) write('live/draft',{...st.live,active:[...a,id]});
@@ -391,7 +401,7 @@ async function createSquad(){
   }catch(e){toastMsg='Could not create the squad: '+(e?.message||e);render()}
 }
 function addManual(name){
-  name=cleanName(name); if(!name) return;
+  name=cleanName(name); if(!name||nameTaken(name)) return;
   write('players/m-'+uid(),{name,prefs:[...ROLES],avoid:[],created:Date.now(),manual:true});
 }
 async function deleteSquad(){
