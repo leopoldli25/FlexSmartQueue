@@ -117,8 +117,13 @@ header.top p{margin:6px 0 0;max-width:60ch;color:var(--muted)}
 .pcard-head input{flex:1;min-width:0;font:600 1rem var(--body);color:var(--fg);background:transparent;border:1px solid transparent;border-radius:6px;padding:4px 6px}
 .pcard-head input:hover,.pcard-head input:focus{border-color:var(--line);background:var(--surface)}
 .prefs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
-.pref{display:grid;grid-template-columns:22px 22px minmax(0,1fr) auto;gap:8px;align-items:center;padding:4px 6px;border-radius:6px;background:var(--surface)}
+.pref{display:grid;grid-template-columns:14px 22px 22px minmax(0,1fr) auto;gap:8px;align-items:center;padding:4px 6px;border-radius:6px;background:var(--surface)}
 .pref .n{font:600 .8rem var(--mono);color:var(--muted);text-align:center}
+.prefs.dnd{user-select:none;-webkit-user-select:none}
+.prefs.dnd .pref{cursor:grab}
+.prefs.sorting,.prefs.sorting .pref{cursor:grabbing}
+.grip{color:var(--muted);font-size:.9rem;line-height:1;text-align:center;touch-action:none;padding-block:6px}
+.pref.dragging{position:relative;z-index:1;background:var(--surface);outline:2px solid var(--accent);box-shadow:0 6px 18px color-mix(in srgb,var(--fg) 18%,transparent)}
 .pref.avoid{background:color-mix(in srgb,var(--bad) 10%,var(--surface))}
 .pref.avoid .name{text-decoration:line-through;text-decoration-color:var(--bad)}
 .pref .ctl{display:flex;gap:2px}
@@ -449,7 +454,7 @@ function ago(ts){const m=Math.round((Date.now()-ts)/60000);if(m<1)return'just no
 const av=n=>`<span class="mono-av">${esc((n||'?').trim().charAt(0).toUpperCase())}</span>`;
 
 function prefEditor(key,prefs,avoid){
-  return `<ol class="prefs">${prefs.map((r,i)=>{const a=avoid.includes(r);return `<li class="pref ${a?'avoid':''}"><span class="n">${i+1}</span>${glyph(r)}<span class="name">${RL[r]}</span>
+  return `<ol class="prefs dnd" data-key="${key}">${prefs.map((r,i)=>{const a=avoid.includes(r);return `<li class="pref ${a?'avoid':''}" data-r="${r}"><span class="grip" aria-hidden="true" title="Drag to reorder">⠿</span><span class="n">${i+1}</span>${glyph(r)}<span class="name">${RL[r]}</span>
     <span class="ctl"><button type="button" class="icon-btn" data-act="up" data-id="${key}" data-i="${i}" ${i===0?'disabled':''} aria-label="Move ${RL[r]} up">▲</button><button type="button" class="icon-btn" data-act="down" data-id="${key}" data-i="${i}" ${i===4?'disabled':''} aria-label="Move ${RL[r]} down">▼</button><button type="button" class="icon-btn ${a?'on':''}" data-act="avoid" data-id="${key}" data-r="${r}" aria-pressed="${a}" title="Won't play ${RL[r]}" aria-label="Won't play ${RL[r]}">⊘</button></span></li>`}).join('')}</ol>`;
 }
 function prefSummary(p){
@@ -470,6 +475,7 @@ function footer(){
 function render(){
   const ae=document.activeElement;
   if(ae&&ae.closest&&ae.closest('#app')&&ae.matches('input[type=text]')){pendingRender=true;return}
+  if(drag){pendingRender=true;return}
   pendingRender=false;
   const app=document.getElementById('app');
   const st=V(), cap=isCaptain(), myId=me();
@@ -492,7 +498,7 @@ function render(){
       <form class="panel" data-act="create"><h2>Create a squad</h2>
       <div><label class="lbl" for="cn-squad">Squad name</label><input class="field" style="width:100%" type="text" id="cn-squad" data-bind="cn.squad" value="${esc(ui.cn.squad)}" maxlength="24" placeholder="Optional. Blank uses the date and time"></div>
       <div><label class="lbl" for="cn-name">Your name</label><input class="field" style="width:100%" type="text" id="cn-name" data-bind="cn.name" value="${esc(ui.cn.name)}" maxlength="24"></div>
-      <div><span class="lbl">Your roles, favorite first</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}</div>
+      <div><span class="lbl">Your roles, favorite first (drag to reorder)</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}</div>
       <div class="row"><button class="btn primary" type="submit">Create squad</button><button type="button" class="btn ghost" data-act="demo">Preview with an example squad</button></div>
       <p class="note" style="margin:0">You'll be the captain: you control the settings and can remove members. Everyone else edits only their own roles.</p></form>
       ${rec.length?`<section class="panel"><h2>Your squads</h2><div class="home-list">${rec.map(r=>`<a href="?squad=${encodeURIComponent(r.id)}"><span>${esc(r.name)}</span><span class="muted">Open →</span></a>`).join('')}</div></section>`:''}
@@ -508,7 +514,7 @@ function render(){
   /* join card */
   const join=joined?'':`<form class="panel join" id="join" data-act="join"><div class="panel-head"><h2>Join ${esc(st.squad.name)}</h2><span class="eyebrow">${ids.length} in squad</span></div>
       <div><label class="lbl" for="jn-name">Your name</label><input class="field" style="width:100%" type="text" id="jn-name" data-bind="jn.name" value="${esc(ui.jn.name)}" maxlength="24"></div>
-      <div><span class="lbl">Your roles, favorite first</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}<p class="note" style="margin:6px 0 0">Use ⊘ on roles you refuse to play. You can change all of this later.</p></div>
+      <div><span class="lbl">Your roles, favorite first (drag to reorder)</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}<p class="note" style="margin:6px 0 0">Use ⊘ on roles you refuse to play. You can change all of this later.</p></div>
       <div class="row"><button class="btn primary" type="submit">Join squad</button></div></form>`;
 
   /* draft panel */
@@ -655,6 +661,36 @@ app.addEventListener('change',e=>{
 });
 app.addEventListener('keydown',e=>{if(e.target.dataset?.act==='rename'&&e.key==='Enter')e.target.blur()});
 app.addEventListener('focusout',()=>{setTimeout(()=>{if(pendingRender)render()},0)});
+
+/* ---------- drag to reorder roles (mouse: whole row, touch: the grip) ---------- */
+let drag=null;
+app.addEventListener('pointerdown',e=>{
+  const li=e.target.closest('.prefs.dnd .pref'); if(!li||e.button>0||e.target.closest('button')) return;
+  if(e.pointerType!=='mouse'&&!e.target.closest('.grip')) return;
+  const ol=li.parentElement;
+  drag={li,ol,key:ol.dataset.key,id:e.pointerId};
+  ol.setPointerCapture(e.pointerId);   // capture on the list: the row itself moves in the DOM
+  li.classList.add('dragging'); ol.classList.add('sorting');
+  e.preventDefault();
+});
+app.addEventListener('pointermove',e=>{
+  if(!drag||e.pointerId!==drag.id) return;
+  const {li,ol}=drag;
+  let before=null;
+  for(const x of ol.children){ if(x===li) continue; const r=x.getBoundingClientRect(); if(e.clientY<r.top+r.height/2){before=x;break} }
+  if(before!==li.nextElementSibling){ ol.insertBefore(li,before); [...ol.children].forEach((x,i)=>x.querySelector('.n').textContent=i+1) }
+});
+function endDrag(e){
+  if(!drag||e.pointerId!==drag.id) return;
+  const {li,ol,key}=drag; drag=null;
+  li.classList.remove('dragging'); ol.classList.remove('sorting');
+  const order=[...ol.children].map(x=>x.dataset.r);
+  const cur=key==='@join'?ui.jn.prefs:V().players[key]?.prefs;
+  if(!cur||order.join()===cur.join()){render();return}
+  if(key==='@join'){ui.jn.prefs=order;render()} else savePlayer(key,{prefs:order});
+}
+app.addEventListener('pointerup',endDrag);
+app.addEventListener('pointercancel',endDrag);
 
 /* ---------- boot ---------- */
 render();
