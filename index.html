@@ -127,16 +127,9 @@ header.top p{margin:6px 0 0;max-width:60ch;color:var(--muted)}
 .bubble .rk{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 .74rem var(--mono)}
 .rk.r0{background:var(--good);color:var(--surface)} .rk.r1{background:var(--accent);color:var(--accent-ink)}
 .rk.r2{background:var(--surface-2);color:var(--fg)} .rk.r3{background:var(--warn);color:var(--surface)} .rk.r4{background:var(--bad);color:var(--surface)}
-.bubble .x{width:24px;height:24px;border-radius:50%;border:0;background:transparent;color:var(--muted);display:grid;place-items:center;font-size:.85rem;padding:0}
-.bubble .x:hover{color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent)}
-.bubble.avoid{border-color:color-mix(in srgb,var(--bad) 55%,var(--line));background:color-mix(in srgb,var(--bad) 9%,var(--surface))}
-.bubble.avoid .nm{text-decoration:line-through;text-decoration-color:var(--bad)}
-.bubble.avoid .x{color:var(--bad)}
 .bubble.lifted{z-index:3;cursor:grabbing;scale:1.07;border-color:var(--accent);box-shadow:0 10px 24px color-mix(in srgb,var(--fg) 22%,transparent);transition:none}
 .bubble:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .bubbles-hint{margin:6px 0 0;font-size:.8rem;color:var(--muted)}
-.pref.avoid{background:color-mix(in srgb,var(--bad) 10%,var(--surface))}
-.pref.avoid .name{text-decoration:line-through;text-decoration-color:var(--bad)}
 .pref .ctl{display:flex;gap:2px}
 .icon-btn{border:1px solid transparent;background:transparent;border-radius:5px;width:28px;height:26px;display:grid;place-items:center;color:var(--muted);font-size:.85rem}
 .icon-btn:hover{border-color:var(--line);color:var(--fg)}
@@ -178,7 +171,6 @@ details.tune summary{cursor:pointer;font:600 .95rem var(--display);letter-spacin
 .order{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
 .order .o{display:inline-flex;align-items:center;gap:4px;font:500 .78rem var(--mono);padding:3px 6px 3px 4px;border-radius:5px;background:var(--surface)}
 .order .o .glyph{width:16px;height:16px}
-.order .o.avoid{color:var(--bad);text-decoration:line-through}
 .locked{font-size:.82rem;color:var(--muted)}
 .grid.wide{margin-top:20px}
 body{margin:0}
@@ -199,7 +191,6 @@ const ROLES=['top','jungle','mid','bot','support'];
 const RL={top:'Top',jungle:'Jungle',mid:'Mid',bot:'Bot',support:'Support'};
 const PICK=['1st pick','2nd pick','3rd pick','4th pick','Last pick'];
 const PREF=[0,1,2.5,4.5,7];      // cost of getting your Nth choice
-const AVOID=15;                  // extra cost for a "won't play" role
 const DEFAULT_CFG={wRep:1,wFair:1,wPerf:0.5,window:8};
 const RECENT_KEY='fsq-recent-squads';
 
@@ -291,7 +282,7 @@ function profile(st,pid){
 }
 function cost(p,prof,role,cfg){
   const r=rankOf(p,role);
-  let base=PREF[r]+((p.avoid||[]).includes(role)?AVOID:0);
+  const base=PREF[r];
   const fair=base*(1+cfg.wFair*prof.debt/3);
   const rep=cfg.wRep*prof.rep[role]*(2+PREF[r]);
   const pf=prof.perf[role], wr=(pf.w+1)/(pf.w+pf.l+2);
@@ -318,7 +309,6 @@ function solve(st,active){
 function reasons(st,pid,role,lineup){
   const p=st.players[pid]; if(!p) return [];
   const prof=profile(st,pid), r=rankOf(p,role), out=[];
-  if((p.avoid||[]).includes(role)) out.push(['bad',"On their won't-play list"]);
   const last=prof.h.slice(0,3), same=last.filter(g=>g.lineup[pid]===role).length;
   if(same) out.push([same>=2?'warn':'', `Played ${RL[role]} ${same} of last ${last.length}`]);
   if(r>0){
@@ -364,18 +354,14 @@ function toggleActive(pid){
 }
 function savePlayer(pid,patch){
   const p=V().players[pid];
-  write('players/'+pid,{...p,prefs:[...p.prefs],avoid:[...(p.avoid||[])],...patch});
+  // avoid stays an empty list: refusing roles was removed, but the published Firestore rules still expect the field
+  write('players/'+pid,{...p,prefs:[...p.prefs],avoid:[],...patch});
 }
 function movePref(pid,i,dir){
   const j=i+dir; if(j<0||j>4) return;
   const src=pid==='@join'?ui.jn:V().players[pid], prefs=[...src.prefs];
   [prefs[i],prefs[j]]=[prefs[j],prefs[i]];
   if(pid==='@join'){ui.jn.prefs=prefs;render()} else savePlayer(pid,{prefs});
-}
-function toggleAvoid(pid,role){
-  const src=pid==='@join'?ui.jn:V().players[pid]; let av=[...(src.avoid||[])];
-  av=av.includes(role)?av.filter(r=>r!==role):[...av,role];
-  if(pid==='@join'){ui.jn.avoid=av;render()} else savePlayer(pid,{avoid:av});
 }
 function rename(pid,name){
   const p=V().players[pid]; name=cleanName(name); if(!p||!name||name===p.name) return;
@@ -384,7 +370,7 @@ function rename(pid,name){
 function joinSquad(){
   const name=cleanName(ui.jn.name), id=me(); if(!name||!id) return;
   const st=V();
-  write('players/'+id,{name,prefs:[...ui.jn.prefs],avoid:[...ui.jn.avoid],created:Date.now()});
+  write('players/'+id,{name,prefs:[...ui.jn.prefs],avoid:[],created:Date.now()});
   const a=activeIds(st); if(a.length<5&&!a.includes(id)) write('live/draft',{...st.live,active:[...a,id]});
   ui.jn={name:'',prefs:[...ROLES],avoid:[]};
 }
@@ -397,7 +383,7 @@ async function createSquad(){
   const {doc,db,setDoc}=FB;
   try{
     await setDoc(doc(db,'squads',sid),{name:sq,captain:UID,created:Date.now(),cfg:{...DEFAULT_CFG}});
-    await setDoc(doc(db,'squads',sid,'players',UID),{name,prefs:[...ui.jn.prefs],avoid:[...ui.jn.avoid],created:Date.now()});
+    await setDoc(doc(db,'squads',sid,'players',UID),{name,prefs:[...ui.jn.prefs],avoid:[],created:Date.now()});
     await setDoc(doc(db,'squads',sid,'live','draft'),{active:[UID],draft:null});
     rememberSquad(sid,sq);
     location.href=joinUrl(sid);
@@ -445,10 +431,10 @@ async function linkGoogle(){
 /* ---------- example squad ---------- */
 function startDemo(){
   const st=emptyState(); st.squad={name:'Example squad',captain:'ex0'};
-  const ex=[['Ari',['mid','top','jungle','bot','support'],['support']],['Bex',['support','bot','mid','jungle','top'],[]],
-            ['Cato',['jungle','top','mid','support','bot'],[]],['Dune',['bot','mid','support','top','jungle'],['jungle']],
-            ['Esk',['mid','jungle','bot','top','support'],[]]];
-  ex.forEach(([name,prefs,avoid],i)=>{st.players['ex'+i]={name,prefs,avoid,created:i}});
+  const ex=[['Ari',['mid','top','jungle','bot','support']],['Bex',['support','bot','mid','jungle','top']],
+            ['Cato',['jungle','top','mid','support','bot']],['Dune',['bot','mid','support','top','jungle']],
+            ['Esk',['mid','jungle','bot','top','support']]];
+  ex.forEach(([name,prefs],i)=>{st.players['ex'+i]={name,prefs,avoid:[],created:i}});
   st.live.active=Object.keys(st.players);
   D=st;
   let t=Date.now()-1000*60*60*30;
@@ -465,12 +451,12 @@ function startDemo(){
 function ago(ts){const m=Math.round((Date.now()-ts)/60000);if(m<1)return'just now';if(m<60)return m+'m ago';const h=Math.round(m/60);if(h<24)return h+'h ago';return Math.round(h/24)+'d ago'}
 const av=n=>`<span class="mono-av">${esc((n||'?').trim().charAt(0).toUpperCase())}</span>`;
 
-function prefEditor(key,prefs,avoid){
-  return `<ol class="bubbles" data-key="${key}" aria-label="Role ranking. Drag bubbles, or focus one and use the arrow keys.">${prefs.map((r,i)=>{const a=avoid.includes(r);
-    return `<li class="bubble ${a?'avoid':''}" data-r="${r}" tabindex="0" aria-label="${i+1}. ${RL[r]}${a?", won't play":''}"><span class="rk r${i}">${i+1}</span>${glyph(r)}<span class="nm">${RL[r]}</span><button type="button" class="x" data-act="avoid" data-id="${key}" data-r="${r}" aria-pressed="${a}" title="${a?'Unmark':"Won't play"} ${RL[r]}" aria-label="Won't play ${RL[r]}">⊘</button></li>`}).join('')}</ol>`;
+function prefEditor(key,prefs){
+  return `<ol class="bubbles" data-key="${key}" aria-label="Role ranking. Drag bubbles, or focus one and use the arrow keys.">${prefs.map((r,i)=>
+    `<li class="bubble" data-r="${r}" tabindex="0" aria-label="${i+1}. ${RL[r]}"><span class="rk r${i}">${i+1}</span>${glyph(r)}<span class="nm">${RL[r]}</span></li>`).join('')}</ol>`;
 }
 function prefSummary(p){
-  return `<div class="order">${p.prefs.map((r,i)=>`<span class="o ${(p.avoid||[]).includes(r)?'avoid':''}" title="${i+1}. ${RL[r]}${(p.avoid||[]).includes(r)?" (won't play)":''}">${glyph(r)}${RL[r].slice(0,3)}</span>`).join('')}</div>`;
+  return `<div class="order">${p.prefs.map((r,i)=>`<span class="o" title="${i+1}. ${RL[r]}">${glyph(r)}${RL[r].slice(0,3)}</span>`).join('')}</div>`;
 }
 function owedMeter(st,id){
   const d=profile(st,id).debt;
@@ -510,7 +496,7 @@ function render(){
       <form class="panel" data-act="create"><h2>Create a squad</h2>
       <div><label class="lbl" for="cn-squad">Squad name</label><input class="field" style="width:100%" type="text" id="cn-squad" data-bind="cn.squad" value="${esc(ui.cn.squad)}" maxlength="24" placeholder="Optional. Blank uses the date and time"></div>
       <div><label class="lbl" for="cn-name">Your name</label><input class="field" style="width:100%" type="text" id="cn-name" data-bind="cn.name" value="${esc(ui.cn.name)}" maxlength="24"></div>
-      <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}</div>
+      <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs)}</div>
       <div class="row"><button class="btn primary" type="submit">Create squad</button><button type="button" class="btn ghost" data-act="demo">Preview with an example squad</button></div>
       <p class="note" style="margin:0">You'll be the captain: you control the settings and can remove members. Everyone else edits only their own roles.</p></form>
       ${rec.length?`<section class="panel"><h2>Your squads</h2><div class="home-list">${rec.map(r=>`<a href="?squad=${encodeURIComponent(r.id)}"><span>${esc(r.name)}</span><span class="muted">Open →</span></a>`).join('')}</div></section>`:''}
@@ -526,7 +512,7 @@ function render(){
   /* join card */
   const join=joined?'':`<form class="panel join" id="join" data-act="join"><div class="panel-head"><h2>Join ${esc(st.squad.name)}</h2><span class="eyebrow">${ids.length} in squad</span></div>
       <div><label class="lbl" for="jn-name">Your name</label><input class="field" style="width:100%" type="text" id="jn-name" data-bind="jn.name" value="${esc(ui.jn.name)}" maxlength="24"></div>
-      <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}<p class="note" style="margin:6px 0 0">Use ⊘ on roles you refuse to play. You can change all of this later.</p></div>
+      <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs)}<p class="note" style="margin:6px 0 0">Everyone plays every role sometimes. Your order decides how often. You can change it later.</p></div>
       <div class="row"><button class="btn primary" type="submit">Join squad</button></div></form>`;
 
   /* draft panel */
@@ -593,7 +579,7 @@ function render(){
     const p=st.players[myId];
     mine=`<section class="panel"><div class="panel-head"><h2>Your roles</h2><span class="you">You</span></div>
       <div class="pcard-head">${av(p.name)}<input type="text" id="my-name" value="${esc(p.name)}" data-act="rename" data-id="${myId}" aria-label="Your name" maxlength="24"></div>
-      ${prefEditor(myId,p.prefs,p.avoid||[])}${owedMeter(st,myId)}
+      ${prefEditor(myId,p.prefs)}${owedMeter(st,myId)}
       ${ui.confirmDel==='p'+myId?`<div class="confirm">Leave the squad? Your past games stay in the log. <button class="btn sm loss" data-act="delPlayer" data-id="${myId}">Leave</button><button class="btn sm ghost" data-act="cancelDel">Stay</button></div>`:(cap?'':`<button class="btn sm ghost" style="align-self:flex-start" data-act="askDelPlayer" data-id="${myId}">Leave squad</button>`)}</section>`;
   }
 
@@ -607,7 +593,7 @@ function render(){
     const head=edit?`<input type="text" id="name-${id}" value="${esc(p.name)}" data-act="rename" data-id="${id}" aria-label="Player name" maxlength="24">`:`<span class="pn">${esc(p.name)}</span>`;
     return `<div class="pcard"><div class="pcard-head">${av(p.name)}${head}${p.manual?'<span class="tag" title="Added by the captain">Added</span>':''}
       ${cap?`<button class="icon-btn" data-act="askDelPlayer" data-id="${id}" title="Remove player" aria-label="Remove ${esc(p.name)}">✕</button>`:''}</div>
-      ${edit?prefEditor(id,p.prefs,p.avoid||[]):prefSummary(p)}${owedMeter(st,id)}${del}</div>`;
+      ${edit?prefEditor(id,p.prefs):prefSummary(p)}${owedMeter(st,id)}${del}</div>`;
   }).join('')}</div>`;
   if(cap) sq+=`<form class="add" data-act="addManual"><input type="text" id="new-player" placeholder="Add someone by name" maxlength="24" aria-label="Player name"><button class="btn" type="submit">Add</button></form>`;
   sq+=`</section>`;
@@ -646,7 +632,6 @@ app.addEventListener('click',e=>{
     case 'cancelDel':ui.confirmDel=null;render();break;
     case 'up':movePref(id,+b.dataset.i,-1);break;
     case 'down':movePref(id,+b.dataset.i,1);break;
-    case 'avoid':toggleAvoid(id,b.dataset.r);break;
     case 'resetCfg':write('squad/main',{...V().squad,cfg:{...DEFAULT_CFG}});break;
     case 'copy':copyLink();break;
     case 'google':linkGoogle();break;

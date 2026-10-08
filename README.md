@@ -1,6 +1,6 @@
 # Flex Smart Queue
 
-A role draft for a League of Legends flex 5-stack. The captain creates a squad and shares a join link. Everyone ranks their own roles (and marks roles they won't play). Each draft balances preferences, rotates people off roles they keep getting, and gives priority to whoever has been stuck on off-roles or lost on them.
+A role draft for a League of Legends flex 5-stack. The captain creates a squad and shares a join link. Everyone ranks their own roles from favorite to least favorite. Nobody can refuse a role outright; the ranking decides how often you get each one. Each draft balances preferences, rotates people off roles they keep getting, and gives priority to whoever has been stuck on off-roles or lost on them.
 
 It's a static site (GitHub Pages) with Firebase for the shared data. Friends don't need an account: the site signs them in as a guest in their browser.
 
@@ -109,7 +109,7 @@ Firebase blocks sign-in from domains it doesn't know.
 
 ## How the draft works
 
-- **Preferences:** each player's 1st to 5th role choice. Getting a lower choice costs more. ⊘ marks a role they won't play; the draft only uses it if there's no other way.
+- **Preferences:** each player drags their roles into order, 1st to 5th. Getting a lower choice costs more, but every role is possible.
 - **Rotation:** roles you played in recent games cost extra, with the most recent games counting most. Repeating a role you dislike costs much more than repeating your main.
 - **Fairness ("Owed"):** players who've recently had off-roles, especially losses on them, get more weight in the next draft.
 - **Results:** marking W/L nudges people slightly toward roles they win on.
