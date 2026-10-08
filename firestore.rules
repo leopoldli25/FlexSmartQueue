@@ -3,15 +3,25 @@ rules_version = '2';
 // Flex Smart Queue
 // - Anyone signed in (guests included) can read a squad if they have its link.
 // - Each player can only create/edit/delete their own entry.
-// - Only the captain can change squad settings, add people by name, remove players, delete games or delete the squad.
-// - Squad members can run drafts and mark wins/losses.
+// - Only the captain runs drafts, logs results, sets the starting 5, changes settings,
+//   adds people by name, removes players, deletes games or deletes the squad.
+// - A player may add themselves to the starting 5 when joining (if there's room) and take themselves out when leaving.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function squadPath(sid) { return /databases/$(database)/documents/squads/$(sid); }
     function isCaptain(sid) { return signedIn() && get(squadPath(sid)).data.captain == request.auth.uid; }
-    function isMember(sid) {
-      return signedIn() && exists(/databases/$(database)/documents/squads/$(sid)/players/$(request.auth.uid));
+    // a non-captain may only add or remove their own id in the starting 5, nothing else
+    function selfOnlyLineupChange() {
+      let before = resource == null ? [] : resource.data.get('active', []);
+      let after = request.resource.data.get('active', []);
+      let added = after.toSet().difference(before.toSet());
+      let removed = before.toSet().difference(after.toSet());
+      return signedIn()
+        && after.size() <= 5
+        && request.resource.data.get('draft', null) == (resource == null ? null : resource.data.get('draft', null))
+        && ((added == [request.auth.uid].toSet() && removed.size() == 0)
+          || (removed == [request.auth.uid].toSet() && added.size() == 0));
     }
     function validPlayer() {
       let d = request.resource.data;
@@ -39,13 +49,13 @@ service cloud.firestore {
 
       match /games/{gid} {
         allow read: if signedIn();
-        allow create, update: if isMember(sid);
-        allow delete: if isCaptain(sid);
+        allow create, update, delete: if isCaptain(sid);
       }
 
       match /live/{docId} {
         allow read: if signedIn();
-        allow write: if docId == 'draft' && isMember(sid);
+        allow create, update: if docId == 'draft' && (isCaptain(sid) || selfOnlyLineupChange());
+        allow delete: if isCaptain(sid);
       }
     }
   }

@@ -69,9 +69,9 @@ header.top p{margin:6px 0 0;max-width:60ch;color:var(--muted)}
 
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px 6px 6px;display:inline-flex;align-items:center;gap:8px;font-weight:500}
-.chip[aria-pressed="true"]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--surface))}
+.chip[aria-pressed="true"],.chip.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--surface))}
 .mono-av{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:600 .8rem var(--display);background:var(--surface-2);color:var(--fg);flex:none}
-.chip[aria-pressed="true"] .mono-av{background:var(--accent);color:var(--accent-ink)}
+.chip[aria-pressed="true"] .mono-av,.chip.on .mono-av{background:var(--accent);color:var(--accent-ink)}
 
 .glyph{width:22px;height:22px;flex:none;color:var(--fg)}
 .slot .role .glyph{color:var(--gold)}
@@ -157,6 +157,7 @@ details.tune summary{cursor:pointer;font:600 .95rem var(--display);letter-spacin
 .panel.danger{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
 .known{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .known b{font-weight:600}
+.grp{font:600 .8rem var(--mono);letter-spacing:.1em;text-transform:uppercase;margin:4px 0 -4px}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.85rem}
 @media (prefers-reduced-motion: no-preference){.slot{animation:drop .28s ease both}.slot:nth-child(2){animation-delay:.04s}.slot:nth-child(3){animation-delay:.08s}.slot:nth-child(4){animation-delay:.12s}.slot:nth-child(5){animation-delay:.16s}}
 @keyframes drop{from{transform:translateY(-4px);opacity:.4}to{transform:none;opacity:1}}
@@ -355,10 +356,16 @@ function lockIn(){
   write('games/'+uid(),{at:Date.now(),lineup:{...d.lineup},picks,result:null});
   write('live/draft',{...st.live,draft:null});
 }
-function toggleActive(pid){
-  const st=V(); let a=activeIds(st);
-  if(a.includes(pid)) a=a.filter(x=>x!==pid); else { if(a.length>=5) return; a=[...a,pid]; }
-  write('live/draft',{...st.live,active:a});
+// starting 5 vs reserves: only the captain moves people (rules enforce it)
+function startPlayer(pid){
+  const st=V(),a=activeIds(st); if(a.includes(pid)) return;
+  if(a.length<5){ui.swapIn=null;write('live/draft',{...st.live,active:[...a,pid],draft:null});return}
+  ui.swapIn=pid; render();   // full: pick a starter to swap out
+}
+function benchPlayer(pid){
+  const st=V(),a=activeIds(st);
+  if(ui.swapIn){const inn=ui.swapIn;ui.swapIn=null;write('live/draft',{...st.live,active:a.map(x=>x===pid?inn:x),draft:null});return}
+  write('live/draft',{...st.live,active:a.filter(x=>x!==pid),draft:null});
 }
 function savePlayer(pid,patch){
   const p=V().players[pid];
@@ -391,7 +398,8 @@ function joinSquad(){
   if(nameTaken(name,id)){ui.editName=true;render();return}
   const st=V();
   write('players/'+id,{name,prefs:[...ui.jn.prefs],avoid:[],created:Date.now()});
-  const a=activeIds(st); if(a.length<5&&!a.includes(id)) write('live/draft',{...st.live,active:[...a,id]});
+  // members may only add themselves to the raw list (rules compare it exactly)
+  const raw=st.live.active||[]; if(raw.length<5&&!raw.includes(id)) write('live/draft',{...st.live,active:[...raw,id]});
   if(!D) saveProfile(name,ui.jn.prefs);
   ui.editName=false; ui.jn=freshJoin();
 }
@@ -413,7 +421,9 @@ async function createSquad(){
 }
 function addManual(name){
   name=cleanName(name); if(!name||nameTaken(name)) return;
-  write('players/m-'+uid(),{name,prefs:[...ROLES],avoid:[],created:Date.now(),manual:true});
+  const id='m-'+uid(), st=V();
+  write('players/'+id,{name,prefs:[...ROLES],avoid:[],created:Date.now(),manual:true});
+  const a=activeIds(st); if(a.length<5) write('live/draft',{...st.live,active:[...a,id]});
 }
 async function deleteSquad(){
   if(!FB||!SID||!isCaptain()) return;
@@ -437,7 +447,10 @@ async function deleteSquad(){
 }
 function removePlayer(pid){
   const st=V();
-  if((st.live.active||[]).includes(pid)) write('live/draft',{...st.live,active:activeIds(st).filter(x=>x!==pid),draft:null});
+  const raw=st.live.active||[];
+  if(raw.includes(pid)) write('live/draft',isCaptain()
+    ?{...st.live,active:activeIds(st).filter(x=>x!==pid),draft:null}
+    :{...st.live,active:raw.filter(x=>x!==pid)});   // a member leaving may only take themselves out
   write('players/'+pid,null);
   ui.confirmDel=null;
 }
@@ -493,6 +506,11 @@ function startDemo(){
 function ago(ts){const m=Math.round((Date.now()-ts)/60000);if(m<1)return'just now';if(m<60)return m+'m ago';const h=Math.round(m/60);if(h<24)return h+'h ago';return Math.round(h/24)+'d ago'}
 const av=n=>`<span class="mono-av">${esc((n||'?').trim().charAt(0).toUpperCase())}</span>`;
 
+function lineupBtn(id,starting,act){
+  if(starting) return ui.swapIn?`<button class="btn sm loss" data-act="bench" data-id="${id}">Swap out</button>`:`<button class="btn sm" data-act="bench" data-id="${id}" title="Move to reserves">Bench</button>`;
+  if(ui.swapIn===id) return `<span class="tag warn">Swapping in…</span>`;
+  return `<button class="btn sm win" data-act="start" data-id="${id}" title="${act.length>=5?'Swap into the starting 5':'Add to the starting 5'}">${act.length>=5?'Swap in':'Start'}</button>`;
+}
 function nameField(id,bind,val){
   if(PROFILE&&!ui.editName&&val===PROFILE.name)
     return `<div class="known"><span class="muted">${bind==='cn.name'?'Captain':'Joining as'}</span> <b>${esc(val)}</b> <button type="button" class="btn sm ghost" data-act="editName">Change</button></div>`;
@@ -554,18 +572,20 @@ function render(){
 
   const joined=!!(myId&&st.players[myId]);
   const ids=Object.keys(st.players).sort((a,b)=>(st.players[a].created||0)-(st.players[b].created||0));
-  const act=activeIds(st), d=st.live.draft, play=isMember();
+  const act=activeIds(st), d=st.live.draft, play=cap;   // only the captain drafts and logs results
 
   /* join card */
   const join=joined?'':`<form class="panel join" id="join" data-act="join"><div class="panel-head"><h2>Join ${esc(st.squad.name)}</h2><span class="eyebrow">${ids.length} in squad</span></div>
       ${nameField('jn-name','jn.name',ui.jn.name)}
       <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs)}<p class="note" style="margin:6px 0 0">Everyone plays every role sometimes. Your order decides how often. You can change it later.</p></div>
+      ${act.length>=5?'<div class="notice">The starting 5 is full, so you\'ll join as a reserve. The captain can swap you in, and your game history follows you.</div>':''}
       <div class="row"><button class="btn primary" type="submit">Join squad</button></div></form>`;
 
   /* draft panel */
-  let draft=`<section class="panel" id="draft"><div class="panel-head"><h2>Draft</h2><span class="eyebrow">${act.length}/5 queued</span></div>`;
-  draft+=`<div class="chips" role="group" aria-label="Who's queuing">${ids.map(id=>`<button class="chip" aria-pressed="${act.includes(id)}" data-act="active" data-id="${id}" ${play?'':'disabled'}>${av(st.players[id].name)}${esc(st.players[id].name)}</button>`).join('')||'<span class="muted">Nobody has joined yet.</span>'}</div>`;
-  if(act.length<5&&act.length>0) draft+=`<p class="note" style="margin:0">${5-act.length} slot${5-act.length>1?'s':''} will go to a random. Pick up to 5 players.</p>`;
+  let draft=`<section class="panel" id="draft"><div class="panel-head"><h2>Draft</h2><span class="eyebrow">Starting ${act.length}/5</span></div>`;
+  draft+=`<div class="chips" aria-label="Starting 5">${act.map(id=>`<span class="chip on">${av(st.players[id].name)}${esc(st.players[id].name)}</span>`).join('')||'<span class="muted">Nobody in the starting 5 yet.</span>'}</div>`;
+  if(act.length<5&&act.length>0) draft+=`<p class="note" style="margin:0">${5-act.length} open slot${5-act.length>1?'s':''} will go to a random.${cap&&ids.length>act.length?' Start someone from the reserves to fill it.':''}</p>`;
+  if(!cap) draft+=`<p class="note" style="margin:0">The captain runs the draft and logs results. You'll see it update here live.</p>`;
   draft+=`<div class="row"><button class="btn primary" data-act="roll" ${act.length&&play?'':'disabled'}>${d?'Redraft':'Draft roles'}</button>`;
   if(d) draft+=`<button class="btn" data-act="reroll" ${d.alts.length>1&&play?'':'disabled'} title="Show another lineup that is almost as fair">Another fair option${d.alts.length>1?` (${d.idx+1}/${d.alts.length})`:''}</button>`;
   draft+=`</div>`;
@@ -624,7 +644,8 @@ function render(){
   let mine='';
   if(joined){
     const p=st.players[myId];
-    mine=`<section class="panel"><div class="panel-head"><h2>Your roles</h2><span class="you">You</span></div>
+    const meStart=act.includes(myId);
+    mine=`<section class="panel"><div class="panel-head"><h2>Your roles</h2><span class="row"><span class="tag ${meStart?'good':''}">${meStart?'Starter':'Reserve'}</span>${cap?lineupBtn(myId,meStart,act):''}<span class="you">You</span></span></div>
       <div class="pcard-head">${av(p.name)}<input type="text" id="my-name" value="${esc(p.name)}" data-act="rename" data-id="${myId}" aria-label="Your name" maxlength="24"></div>
       ${prefEditor(myId,p.prefs)}${owedMeter(st,myId)}
       ${ui.confirmDel==='p'+myId?`<div class="confirm">Leave the squad? Your past games stay in the log. <button class="btn sm loss" data-act="delPlayer" data-id="${myId}">Leave</button><button class="btn sm ghost" data-act="cancelDel">Stay</button></div>`:(cap?'':`<button class="btn sm ghost" style="align-self:flex-start" data-act="askDelPlayer" data-id="${myId}">Leave squad</button>`)}</section>`;
@@ -632,16 +653,20 @@ function render(){
 
   /* squad list */
   const others=ids.filter(id=>id!==myId);
+  const starters=others.filter(id=>act.includes(id)), reserves=others.filter(id=>!act.includes(id));
   let sq=`<section class="panel" id="squad"><div class="panel-head"><h2>Squad</h2><span class="eyebrow">${ids.length} players</span></div>`;
+  if(ui.swapIn&&st.players[ui.swapIn]) sq+=`<div class="notice">Pick a starter to swap out for <b>${esc(pname(st,ui.swapIn))}</b>. <button class="btn sm ghost" data-act="cancelSwap">Cancel</button></div>`;
   if(!others.length) sq+=`<div class="empty">${cap?'Nobody else yet. Send the join link to your friends.':'Nobody else has joined yet.'}</div>`;
-  sq+=`<div class="players">${others.map(id=>{
+  const card=id=>{
     const p=st.players[id], edit=canEditPlayer(id);
     const del=ui.confirmDel==='p'+id?`<div class="confirm">Remove ${esc(p.name)}? Their past games stay in the log. <button class="btn sm loss" data-act="delPlayer" data-id="${id}">Remove</button><button class="btn sm ghost" data-act="cancelDel">Keep</button></div>`:'';
     const head=edit?`<input type="text" id="name-${id}" value="${esc(p.name)}" data-act="rename" data-id="${id}" aria-label="Player name" maxlength="24">`:`<span class="pn">${esc(p.name)}</span>`;
     return `<div class="pcard"><div class="pcard-head">${av(p.name)}${head}${p.manual?'<span class="tag" title="Added by the captain">Added</span>':''}
-      ${cap?`<button class="icon-btn" data-act="askDelPlayer" data-id="${id}" title="Remove player" aria-label="Remove ${esc(p.name)}">✕</button>`:''}</div>
+      ${cap?lineupBtn(id,act.includes(id),act):''}${cap?`<button class="icon-btn" data-act="askDelPlayer" data-id="${id}" title="Remove player" aria-label="Remove ${esc(p.name)}">✕</button>`:''}</div>
       ${edit?prefEditor(id,p.prefs):prefSummary(p)}${owedMeter(st,id)}${del}</div>`;
-  }).join('')}</div>`;
+  };
+  if(starters.length) sq+=`<h3 class="grp">Starting 5 <span class="muted">${act.length}/5</span></h3><div class="players">${starters.map(card).join('')}</div>`;
+  if(reserves.length) sq+=`<h3 class="grp">Reserves <span class="muted">${reserves.length}</span></h3><div class="players">${reserves.map(card).join('')}</div>`;
   if(cap) sq+=`<form class="add" data-act="addManual"><input type="text" id="new-player" placeholder="Add someone by name" maxlength="24" aria-label="Player name"><button class="btn" type="submit">Add</button></form>`;
   sq+=`</section>`;
 
@@ -674,7 +699,9 @@ app.addEventListener('click',e=>{
   const b=e.target.closest('[data-act]'); if(!b||b.tagName==='FORM'||b.tagName==='INPUT') return;
   const id=b.dataset.id;
   switch(b.dataset.act){
-    case 'active':toggleActive(id);break;
+    case 'start':startPlayer(id);break;
+    case 'bench':benchPlayer(id);break;
+    case 'cancelSwap':ui.swapIn=null;render();break;
     case 'roll':roll();break;
     case 'reroll':reroll();break;
     case 'swap':swapPick(id);break;

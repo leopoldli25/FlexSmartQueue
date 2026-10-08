@@ -122,12 +122,15 @@ The captain can tune all of this under **Draft settings**.
 | | Captain | Squad member | Someone with the link who hasn't joined |
 | --- | --- | --- | --- |
 | See the squad, drafts, games | ✓ | ✓ | ✓ |
-| Join and edit own roles/name | ✓ | ✓ | ✓ (by joining) |
+| Join and edit own name/roles | ✓ | ✓ | ✓ (by joining) |
 | Edit someone else's roles | Only people the captain added by name | ✗ | ✗ |
-| Roll drafts, lock in, mark W/L | ✓ | ✓ | ✗ |
+| Roll drafts, lock in, mark W/L | ✓ | ✗ | ✗ |
+| Swap people between starting 5 and reserves | ✓ | ✗ | ✗ |
 | Change draft settings | ✓ | ✗ | ✗ |
 | Remove players, delete games | ✓ | ✗ (can leave) | ✗ |
 | Delete the whole squad | ✓ | ✗ | ✗ |
+
+**Starting 5 and reserves:** the first five people to join are the starting 5. Anyone after that joins as a reserve. The captain swaps people in and out from the Squad panel, and each person's game history and "Owed" meter follow them.
 
 The Firestore rules enforce this, not just the page. The join link is the only way in, so share it only with your squad.
 
