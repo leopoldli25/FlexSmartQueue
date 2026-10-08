@@ -119,10 +119,11 @@ header.top p{margin:6px 0 0;max-width:60ch;color:var(--muted)}
 .prefs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
 .pref{display:grid;grid-template-columns:14px 22px 22px minmax(0,1fr) auto;gap:8px;align-items:center;padding:4px 6px;border-radius:6px;background:var(--surface)}
 .pref .n{font:600 .8rem var(--mono);color:var(--muted);text-align:center}
-.bubbles{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px;position:relative;user-select:none;-webkit-user-select:none}
-.bubble{position:relative;display:inline-flex;align-items:center;gap:6px;padding:5px 4px 5px 5px;border-radius:999px;background:var(--surface);border:1px solid var(--line);cursor:grab;touch-action:none;font-weight:600;font-size:.9rem;transition:box-shadow .15s ease,border-color .15s ease,scale .15s ease}
+.bubbles{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;align-items:flex-start;gap:6px;position:relative;user-select:none;-webkit-user-select:none}
+.bubble{position:relative;display:flex;width:13rem;max-width:100%;align-items:center;gap:6px;padding:5px 4px 5px 5px;border-radius:999px;background:var(--surface);border:1px solid var(--line);cursor:grab;touch-action:none;font-weight:600;font-size:.9rem;transition:box-shadow .15s ease,border-color .15s ease,scale .15s ease}
 .bubble:hover{border-color:var(--accent)}
 .bubble .glyph{width:18px;height:18px}
+.bubble .nm{flex:1;min-width:0}
 .bubble .rk{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 .74rem var(--mono)}
 .rk.r0{background:var(--good);color:var(--surface)} .rk.r1{background:var(--accent);color:var(--accent-ink)}
 .rk.r2{background:var(--surface-2);color:var(--fg)} .rk.r3{background:var(--warn);color:var(--surface)} .rk.r4{background:var(--bad);color:var(--surface)}
@@ -509,7 +510,7 @@ function render(){
       <form class="panel" data-act="create"><h2>Create a squad</h2>
       <div><label class="lbl" for="cn-squad">Squad name</label><input class="field" style="width:100%" type="text" id="cn-squad" data-bind="cn.squad" value="${esc(ui.cn.squad)}" maxlength="24" placeholder="Optional. Blank uses the date and time"></div>
       <div><label class="lbl" for="cn-name">Your name</label><input class="field" style="width:100%" type="text" id="cn-name" data-bind="cn.name" value="${esc(ui.cn.name)}" maxlength="24"></div>
-      <div><span class="lbl">Your roles: drag the bubbles, favorite first</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}</div>
+      <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}</div>
       <div class="row"><button class="btn primary" type="submit">Create squad</button><button type="button" class="btn ghost" data-act="demo">Preview with an example squad</button></div>
       <p class="note" style="margin:0">You'll be the captain: you control the settings and can remove members. Everyone else edits only their own roles.</p></form>
       ${rec.length?`<section class="panel"><h2>Your squads</h2><div class="home-list">${rec.map(r=>`<a href="?squad=${encodeURIComponent(r.id)}"><span>${esc(r.name)}</span><span class="muted">Open →</span></a>`).join('')}</div></section>`:''}
@@ -525,7 +526,7 @@ function render(){
   /* join card */
   const join=joined?'':`<form class="panel join" id="join" data-act="join"><div class="panel-head"><h2>Join ${esc(st.squad.name)}</h2><span class="eyebrow">${ids.length} in squad</span></div>
       <div><label class="lbl" for="jn-name">Your name</label><input class="field" style="width:100%" type="text" id="jn-name" data-bind="jn.name" value="${esc(ui.jn.name)}" maxlength="24"></div>
-      <div><span class="lbl">Your roles: drag the bubbles, favorite first</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}<p class="note" style="margin:6px 0 0">Use ⊘ on roles you refuse to play. You can change all of this later.</p></div>
+      <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}<p class="note" style="margin:6px 0 0">Use ⊘ on roles you refuse to play. You can change all of this later.</p></div>
       <div class="row"><button class="btn primary" type="submit">Join squad</button></div></form>`;
 
   /* draft panel */
@@ -691,7 +692,7 @@ function flip(ol,moveFn){
 function follow(e){
   const {li}=drag; li.style.transform='';
   const r=li.getBoundingClientRect();
-  li.style.transform=`translate(${e.clientX-drag.gx-r.left}px,${e.clientY-drag.gy-r.top}px)`;
+  li.style.transform=`translateY(${e.clientY-drag.gy-r.top}px)`;
 }
 app.addEventListener('pointerdown',e=>{
   const li=e.target.closest('.bubbles .bubble'); if(!li||e.button>0||e.target.closest('button')) return;
@@ -710,8 +711,8 @@ app.addEventListener('pointermove',e=>{
   for(const x of ol.children){ if(x===li) continue;
     const c={x:x.offsetLeft+x.offsetWidth/2,y:x.offsetTop+x.offsetHeight/2}, o=ol.getBoundingClientRect();
     const d=Math.hypot(e.clientX-o.left-c.x,e.clientY-o.top-c.y); if(d<bd){bd=d;best=x} }
-  if(!best||bd>best.offsetWidth) return;
-  const after=e.clientX-ol.getBoundingClientRect().left>best.offsetLeft+best.offsetWidth/2;
+  if(!best||bd>best.offsetWidth+best.offsetHeight) return;
+  const after=e.clientY-ol.getBoundingClientRect().top>best.offsetTop+best.offsetHeight/2;
   const ref=after?best.nextElementSibling:best;
   if(ref===li||ref===li.nextElementSibling) return;
   flip(ol,()=>{ol.insertBefore(li,ref);renumber(ol)});
