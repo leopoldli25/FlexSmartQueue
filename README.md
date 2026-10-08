@@ -1,6 +1,6 @@
 # Flex Smart Queue
 
-A role draft for a League of Legends flex 5-stack. The captain creates a squad and shares a join link. Everyone ranks their own roles from favorite to least favorite. Nobody can refuse a role outright; the ranking decides how often you get each one. Each draft balances preferences, rotates people off roles they keep getting, and gives priority to whoever has been stuck on off-roles or lost on them.
+A role draft for a League of Legends flex 5-stack. The captain creates a squad and shares a join link. Everyone ranks their own roles from favorite to least favorite. Nobody can refuse a role outright; the ranking decides how often you get each one. Each draft balances preferences, rotates people off roles they keep getting, and gives priority to whoever has been stuck on off-roles. Wins and losses are recorded but don't affect the draft.
 
 It's a static site (GitHub Pages) with Firebase for the shared data. Friends don't need an account: the site signs them in as a guest in their browser.
 
@@ -111,8 +111,8 @@ Firebase blocks sign-in from domains it doesn't know.
 
 - **Preferences:** each player drags their roles into order, 1st to 5th. Getting a lower choice costs more, but every role is possible.
 - **Rotation:** roles you played in recent games cost extra, with the most recent games counting most. Repeating a role you dislike costs much more than repeating your main.
-- **Fairness ("Owed"):** players who've recently had off-roles, especially losses on them, get more weight in the next draft.
-- **Results:** marking W/L nudges people slightly toward roles they win on.
+- **Fairness ("Owed"):** players who've recently had off-roles get more weight in the next draft.
+- **Results:** W/L is kept as your squad's record only. It never changes who plays what.
 - The app tries all 120 ways to assign roles and picks the fairest. **Another fair option** cycles through ones that are almost as good. Tap two players to swap them by hand.
 
 The captain can tune all of this under **Draft settings**.

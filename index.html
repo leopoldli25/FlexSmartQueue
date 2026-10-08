@@ -195,7 +195,7 @@ const ROLES=['top','jungle','mid','bot','support'];
 const RL={top:'Top',jungle:'Jungle',mid:'Mid',bot:'Bot',support:'Support'};
 const PICK=['1st pick','2nd pick','3rd pick','4th pick','Last pick'];
 const PREF=[0,1,2.5,4.5,7];      // cost of getting your Nth choice
-const DEFAULT_CFG={wRep:1,wFair:1,wPerf:0.5,window:8};
+const DEFAULT_CFG={wRep:1,wFair:1,window:8};   // results are recorded but never affect the draft
 const RECENT_KEY='fsq-recent-squads';
 const PROFILE_KEY='fsq-profile';   // your name + last role order, so you only type them once per browser
 
@@ -276,28 +276,22 @@ function profile(st,pid){
   const all=sortedGames(st).filter(g=>g.lineup&&g.lineup[pid]);
   const h=all.slice(0,N);
   const rep={};ROLES.forEach(r=>rep[r]=0);
-  let debt=0,wsum=0,lossOff=0;
+  let debt=0,wsum=0;
   h.forEach((g,k)=>{
     const role=g.lineup[pid];
     rep[role]+=Math.pow(.6,k);
     const rk=g.picks?.[pid]??rankOf(p,role);
-    let c=PREF[rk];
-    if(g.result==='loss'&&rk>=2){c+=1.5; if(k<3) lossOff++;}
-    const w=Math.pow(.8,k); debt+=c*w; wsum+=w;
+    const w=Math.pow(.8,k); debt+=PREF[rk]*w; wsum+=w;
   });
   debt=debt/(wsum+1);   // shrinks toward 0 when there is little history
-  const perf={};ROLES.forEach(r=>perf[r]={w:0,l:0});
-  all.forEach(g=>{const r=g.lineup[pid]; if(g.result==='win')perf[r].w++; else if(g.result==='loss')perf[r].l++;});
-  return {debt,rep,perf,h,lossOff};
+  return {debt,rep,h};
 }
 function cost(p,prof,role,cfg){
   const r=rankOf(p,role);
   const base=PREF[r];
   const fair=base*(1+cfg.wFair*prof.debt/3);
   const rep=cfg.wRep*prof.rep[role]*(2+PREF[r]);
-  const pf=prof.perf[role], wr=(pf.w+1)/(pf.w+pf.l+2);
-  const perf=-cfg.wPerf*(wr-.5)*6;
-  return fair+rep+perf;
+  return fair+rep;
 }
 function solve(st,active){
   const ps=active.map(id=>({id,p:st.players[id],prof:profile(st,id)}));
@@ -327,8 +321,6 @@ function reasons(st,pid,role,lineup){
     else if(who) out.push(['',`${RL[top]} went to ${pname(st,who)}`]);
   }
   if(prof.debt>=2) out.push(['good','Priority: owed after off-role games']);
-  if(prof.lossOff) out.push(['',`Lost ${prof.lossOff} recent game${prof.lossOff>1?'s':''} on an off-role`]);
-  const pf=prof.perf[role]; if(pf.w+pf.l>=2) out.push(['',`${pf.w}W ${pf.l}L on ${RL[role]}`]);
   return out;
 }
 
@@ -608,7 +600,7 @@ function render(){
   /* games */
   const games=sortedGames(st);
   let gp=`<section class="panel" id="games"><div class="panel-head"><h2>Games</h2><span class="eyebrow">${games.filter(g=>g.result==='win').length}W ${games.filter(g=>g.result==='loss').length}L</span></div>`;
-  if(!games.length) gp+=`<div class="empty">Locked-in lineups show up here. Mark each one Win or Loss so the next draft knows who had a rough game on an off-role.</div>`;
+  if(!games.length) gp+=`<div class="empty">Locked-in lineups show up here. Mark each one Win or Loss to keep your record. Results don't affect the draft.</div>`;
   else gp+=`<div class="games">${games.slice(0,15).map(g=>{
     const lu=ROLES.filter(r=>Object.values(g.lineup).includes(r)).map(r=>{const pid=Object.keys(g.lineup).find(k=>g.lineup[k]===r);return `${RL[r]} <b>${esc(pname(st,pid))}</b>`}).join(' · ');
     const ctl=ui.confirmDel==='g'+g.id?`<span class="confirm">Delete this game? <button class="btn sm loss" data-act="delGame" data-id="${g.id}">Delete</button><button class="btn sm ghost" data-act="cancelDel">Keep</button></span>`
@@ -677,7 +669,6 @@ function render(){
     ${cap?'':'<p class="locked" style="margin:0">Only the squad captain can change these.</p>'}
     ${sl('wRep','Rotation strength',0,3,.25,'How hard the draft pushes people off a role they just played.')}
     ${sl('wFair','Fairness priority',0,3,.25,'How much extra say people get after a run of bad picks.')}
-    ${sl('wPerf','Lean on results',0,2,.25,'Nudges people toward roles they win on, away from roles they keep losing on.')}
     ${sl('window','Memory (games)',3,20,1,'How many recent games count for rotation and fairness.')}
     ${cap?'<button class="btn sm ghost" data-act="resetCfg" style="justify-self:start">Reset to defaults</button>':''}</div></details></section>`;
 
