@@ -155,6 +155,8 @@ details.tune summary{cursor:pointer;font:600 .95rem var(--display);letter-spacin
 .slider input{width:100%;accent-color:var(--accent)}
 .slider p{margin:2px 0 0;font-size:.8rem;color:var(--muted)}
 .panel.danger{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
+.known{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.known b{font-weight:600}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.85rem}
 @media (prefers-reduced-motion: no-preference){.slot{animation:drop .28s ease both}.slot:nth-child(2){animation-delay:.04s}.slot:nth-child(3){animation-delay:.08s}.slot:nth-child(4){animation-delay:.12s}.slot:nth-child(5){animation-delay:.16s}}
 @keyframes drop{from{transform:translateY(-4px);opacity:.4}to{transform:none;opacity:1}}
@@ -194,6 +196,7 @@ const PICK=['1st pick','2nd pick','3rd pick','4th pick','Last pick'];
 const PREF=[0,1,2.5,4.5,7];      // cost of getting your Nth choice
 const DEFAULT_CFG={wRep:1,wFair:1,wPerf:0.5,window:8};
 const RECENT_KEY='fsq-recent-squads';
+const PROFILE_KEY='fsq-profile';   // your name + last role order, so you only type them once per browser
 
 const SID=new URLSearchParams(location.search).get('squad');
 const emptyState=()=>({squad:null,players:{},games:{},live:{active:[],draft:null},cfg:{...DEFAULT_CFG}});
@@ -201,7 +204,12 @@ const S=emptyState();
 let D=null;               // example squad, kept in memory only
 let phase='connecting';   // connecting | ready | setup | error
 let FB=null, UID=null, AUTH_USER=null, squadLoaded=false, squadMissing=false, pendingRender=false, toastMsg='';
-const ui={swap:null,confirmDel:null,jn:{name:'',prefs:[...ROLES],avoid:[]},cn:{squad:'',name:''},copied:false};
+function loadProfile(){try{const p=JSON.parse(localStorage.getItem(PROFILE_KEY)||'null');if(p&&p.name)return{name:cleanName(p.name),prefs:Array.isArray(p.prefs)&&p.prefs.length===5&&ROLES.every(r=>p.prefs.includes(r))?p.prefs:[...ROLES]}}catch(e){}return null}
+function saveProfile(name,prefs){try{localStorage.setItem(PROFILE_KEY,JSON.stringify({name:cleanName(name),prefs:[...prefs]}))}catch(e){}PROFILE=loadProfile()||{name:cleanName(name),prefs:[...prefs]}}
+const cleanName=n=>String(n||'').trim().slice(0,24);
+let PROFILE=loadProfile();
+const freshJoin=()=>({name:PROFILE?.name||'',prefs:[...(PROFILE?.prefs||ROLES)],avoid:[]});
+const ui={swap:null,confirmDel:null,jn:freshJoin(),cn:{squad:'',name:PROFILE?.name||''},copied:false,editName:false};
 
 const V=()=>D||S;
 const me=()=>D?'ex0':UID;
@@ -324,7 +332,6 @@ function reasons(st,pid,role,lineup){
 }
 
 /* ---------- actions ---------- */
-const cleanName=n=>String(n||'').trim().slice(0,24);
 function activeIds(st){return (st.live.active||[]).filter(id=>st.players[id])}
 function roll(){
   const st=V(),act=activeIds(st); if(!act.length) return;
@@ -356,7 +363,9 @@ function toggleActive(pid){
 function savePlayer(pid,patch){
   const p=V().players[pid];
   // avoid stays an empty list: refusing roles was removed, but the published Firestore rules still expect the field
-  write('players/'+pid,{...p,prefs:[...p.prefs],avoid:[],...patch});
+  const next={...p,prefs:[...p.prefs],avoid:[],...patch};
+  write('players/'+pid,next);
+  if(pid===me()&&!D) saveProfile(next.name,next.prefs);
 }
 function movePref(pid,i,dir){
   const j=i+dir; if(j<0||j>4) return;
@@ -379,16 +388,18 @@ function rename(pid,name){
 }
 function joinSquad(){
   const name=cleanName(ui.jn.name), id=me(); if(!name||!id) return;
-  if(nameTaken(name,id)) return;
+  if(nameTaken(name,id)){ui.editName=true;render();return}
   const st=V();
   write('players/'+id,{name,prefs:[...ui.jn.prefs],avoid:[],created:Date.now()});
   const a=activeIds(st); if(a.length<5&&!a.includes(id)) write('live/draft',{...st.live,active:[...a,id]});
-  ui.jn={name:'',prefs:[...ROLES],avoid:[]};
+  if(!D) saveProfile(name,ui.jn.prefs);
+  ui.editName=false; ui.jn=freshJoin();
 }
 // e.g. "Oct 8, 9:41 PM Flex"
 const defaultSquadName=()=>cleanName(new Date().toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' Flex');
 async function createSquad(){
   const name=cleanName(ui.cn.name); if(!name||!FB||!UID) return;
+  saveProfile(name,ui.jn.prefs);
   const sq=cleanName(ui.cn.squad)||defaultSquadName();
   const sid=Array.from(crypto.getRandomValues(new Uint8Array(10)),b=>'abcdefghijkmnpqrstuvwxyz23456789'[b%32]).join('');
   const {doc,db,setDoc}=FB;
@@ -482,6 +493,11 @@ function startDemo(){
 function ago(ts){const m=Math.round((Date.now()-ts)/60000);if(m<1)return'just now';if(m<60)return m+'m ago';const h=Math.round(m/60);if(h<24)return h+'h ago';return Math.round(h/24)+'d ago'}
 const av=n=>`<span class="mono-av">${esc((n||'?').trim().charAt(0).toUpperCase())}</span>`;
 
+function nameField(id,bind,val){
+  if(PROFILE&&!ui.editName&&val===PROFILE.name)
+    return `<div class="known"><span class="muted">${bind==='cn.name'?'Captain':'Joining as'}</span> <b>${esc(val)}</b> <button type="button" class="btn sm ghost" data-act="editName">Change</button></div>`;
+  return `<div><label class="lbl" for="${id}">Your name</label><input class="field" style="width:100%" type="text" id="${id}" data-bind="${bind}" value="${esc(val)}" maxlength="24"></div>`;
+}
 function prefEditor(key,prefs){
   return `<ol class="bubbles" data-key="${key}" aria-label="Role ranking. Drag bubbles, or focus one and use the arrow keys.">${prefs.map((r,i)=>
     `<li class="bubble" data-r="${r}" tabindex="0" aria-label="${i+1}. ${RL[r]}"><span class="rk r${i}">${i+1}</span>${glyph(r)}<span class="nm">${RL[r]}</span></li>`).join('')}</ol>`;
@@ -526,7 +542,7 @@ function render(){
     app.innerHTML=h+`<div class="stage" style="display:flex;flex-direction:column;gap:20px">
       <form class="panel" data-act="create"><h2>Create a squad</h2>
       <div><label class="lbl" for="cn-squad">Squad name</label><input class="field" style="width:100%" type="text" id="cn-squad" data-bind="cn.squad" value="${esc(ui.cn.squad)}" maxlength="24" placeholder="Optional. Blank uses the date and time"></div>
-      <div><label class="lbl" for="cn-name">Your name</label><input class="field" style="width:100%" type="text" id="cn-name" data-bind="cn.name" value="${esc(ui.cn.name)}" maxlength="24"></div>
+      ${nameField('cn-name','cn.name',ui.cn.name)}
       <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs)}</div>
       <div class="row"><button class="btn primary" type="submit">Create squad</button><button type="button" class="btn ghost" data-act="demo">Preview with an example squad</button></div>
       <p class="note" style="margin:0">You'll be the captain: you control the settings and can remove members. Everyone else edits only their own roles.</p></form>
@@ -542,7 +558,7 @@ function render(){
 
   /* join card */
   const join=joined?'':`<form class="panel join" id="join" data-act="join"><div class="panel-head"><h2>Join ${esc(st.squad.name)}</h2><span class="eyebrow">${ids.length} in squad</span></div>
-      <div><label class="lbl" for="jn-name">Your name</label><input class="field" style="width:100%" type="text" id="jn-name" data-bind="jn.name" value="${esc(ui.jn.name)}" maxlength="24"></div>
+      ${nameField('jn-name','jn.name',ui.jn.name)}
       <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs)}<p class="note" style="margin:6px 0 0">Everyone plays every role sometimes. Your order decides how often. You can change it later.</p></div>
       <div class="row"><button class="btn primary" type="submit">Join squad</button></div></form>`;
 
@@ -673,6 +689,7 @@ app.addEventListener('click',e=>{
     case 'down':movePref(id,+b.dataset.i,1);break;
     case 'resetCfg':write('squad/main',{...V().squad,cfg:{...DEFAULT_CFG}});break;
     case 'copy':copyLink();break;
+    case 'editName':ui.editName=true;render();setTimeout(()=>document.getElementById('jn-name')?.focus()||document.getElementById('cn-name')?.focus(),0);break;
     case 'askDelSquad':ui.confirmDel='squad';render();break;
     case 'delSquad':deleteSquad();break;
     case 'google':linkGoogle();break;
