@@ -371,8 +371,11 @@ function joinSquad(){
   const a=activeIds(st); if(a.length<5&&!a.includes(id)) write('live/draft',{...st.live,active:[...a,id]});
   ui.jn={name:'',prefs:[...ROLES],avoid:[]};
 }
+// e.g. "Oct 8, 9:41 PM Flex"
+const defaultSquadName=()=>cleanName(new Date().toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' Flex');
 async function createSquad(){
-  const sq=cleanName(ui.cn.squad), name=cleanName(ui.cn.name); if(!sq||!name||!FB||!UID) return;
+  const name=cleanName(ui.cn.name); if(!name||!FB||!UID) return;
+  const sq=cleanName(ui.cn.squad)||defaultSquadName();
   const sid=Array.from(crypto.getRandomValues(new Uint8Array(10)),b=>'abcdefghijkmnpqrstuvwxyz23456789'[b%32]).join('');
   const {doc,db,setDoc}=FB;
   try{
@@ -487,7 +490,7 @@ function render(){
     const rec=recentSquads();
     app.innerHTML=h+`<div class="stage" style="display:flex;flex-direction:column;gap:20px">
       <form class="panel" data-act="create"><h2>Create a squad</h2>
-      <div><label class="lbl" for="cn-squad">Squad name</label><input class="field" style="width:100%" type="text" id="cn-squad" data-bind="cn.squad" value="${esc(ui.cn.squad)}" maxlength="24" placeholder="e.g. Thursday Flex"></div>
+      <div><label class="lbl" for="cn-squad">Squad name</label><input class="field" style="width:100%" type="text" id="cn-squad" data-bind="cn.squad" value="${esc(ui.cn.squad)}" maxlength="24" placeholder="Optional. Blank uses the date and time"></div>
       <div><label class="lbl" for="cn-name">Your name</label><input class="field" style="width:100%" type="text" id="cn-name" data-bind="cn.name" value="${esc(ui.cn.name)}" maxlength="24"></div>
       <div><span class="lbl">Your roles, favorite first</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}</div>
       <div class="row"><button class="btn primary" type="submit">Create squad</button><button type="button" class="btn ghost" data-act="demo">Preview with an example squad</button></div>
