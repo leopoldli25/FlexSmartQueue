@@ -200,15 +200,18 @@ const RECENT_KEY='fsq-recent-squads';
 const PROFILE_KEY='fsq-profile';   // your name + last role order, so you only type them once per browser
 
 const SID=new URLSearchParams(location.search).get('squad');
+// ?test: each tab is its own player until it's closed (for trying the app with several players on one computer)
+const TEST=new URLSearchParams(location.search).has('test');
+const T=TEST?'&test':'';
 const emptyState=()=>({squad:null,players:{},games:{},live:{active:[],draft:null},cfg:{...DEFAULT_CFG}});
 const S=emptyState();
 let D=null;               // example squad, kept in memory only
 let phase='connecting';   // connecting | ready | setup | error
 let FB=null, UID=null, AUTH_USER=null, squadLoaded=false, squadMissing=false, pendingRender=false, toastMsg='';
 function loadProfile(){try{const p=JSON.parse(localStorage.getItem(PROFILE_KEY)||'null');if(p&&p.name)return{name:cleanName(p.name),prefs:Array.isArray(p.prefs)&&p.prefs.length===5&&ROLES.every(r=>p.prefs.includes(r))?p.prefs:[...ROLES]}}catch(e){}return null}
-function saveProfile(name,prefs){try{localStorage.setItem(PROFILE_KEY,JSON.stringify({name:cleanName(name),prefs:[...prefs]}))}catch(e){}PROFILE=loadProfile()||{name:cleanName(name),prefs:[...prefs]}}
+function saveProfile(name,prefs){if(TEST)return;try{localStorage.setItem(PROFILE_KEY,JSON.stringify({name:cleanName(name),prefs:[...prefs]}))}catch(e){}PROFILE=loadProfile()||{name:cleanName(name),prefs:[...prefs]}}
 const cleanName=n=>String(n||'').trim().slice(0,24);
-let PROFILE=loadProfile();
+let PROFILE=TEST?null:loadProfile();
 const freshJoin=()=>({name:PROFILE?.name||'',prefs:[...(PROFILE?.prefs||ROLES)],avoid:[]});
 const ui={swap:null,confirmDel:null,jn:freshJoin(),cn:{squad:'',name:PROFILE?.name||''},copied:false,editName:false};
 
@@ -408,7 +411,7 @@ async function createSquad(){
     await setDoc(doc(db,'squads',sid,'players',UID),{name,prefs:[...ui.jn.prefs],avoid:[],created:Date.now()});
     await setDoc(doc(db,'squads',sid,'live','draft'),{active:[UID],draft:null});
     rememberSquad(sid,sq);
-    location.href=joinUrl(sid);
+    location.href=joinUrl(sid)+T;
   }catch(e){toastMsg='Could not create the squad: '+(e?.message||e);render()}
 }
 function addManual(name){
@@ -428,7 +431,7 @@ async function deleteSquad(){
       ...players.docs.filter(d=>d.id!==UID).map(d=>d.ref),doc(db,'squads',SID,'players',UID),doc(db,'squads',SID)];
     for(let i=0;i<refs.length;i+=450){const b=writeBatch(db);refs.slice(i,i+450).forEach(r=>b.delete(r));await b.commit()}
     try{localStorage.setItem(RECENT_KEY,JSON.stringify(recentSquads().filter(x=>x.id!==SID)))}catch(e){}
-    location.href=location.pathname;
+    location.href=location.pathname+(TEST?'?test':'');
   }catch(e){
     ui.deleting=false; ui.confirmDel=null;
     toastMsg=e?.code==='permission-denied'
@@ -524,7 +527,7 @@ function footer(){
   const g=AUTH_USER&&!AUTH_USER.isAnonymous;
   return `<footer class="foot"><span>${g?`Signed in with Google as ${esc(AUTH_USER.email||'your account')}.`:'You are a guest on this browser. Clearing site data or switching devices makes you a new player.'}</span>
     ${g?'':'<button class="btn sm" data-act="google">Keep me on other devices (Google)</button>'}
-    ${SID?'<a href="./">All squads</a>':''}</footer>`;
+    ${SID?`<a href="./${TEST?'?test':''}">All squads</a>`:''}</footer>`;
 }
 
 function render(){
@@ -534,7 +537,7 @@ function render(){
   pendingRender=false;
   const app=document.getElementById('app');
   const st=V(), cap=isCaptain(), myId=me();
-  const statusTxt=D?'Example squad · nothing saved':phase==='ready'?(SID?'Live sync':'Connected'):phase==='setup'?'Not set up':phase==='error'?'Offline':'Connecting…';
+  const statusTxt=D?'Example squad · nothing saved':TEST&&phase==='ready'?'Test mode · this tab is its own player':phase==='ready'?(SID?'Live sync':'Connected'):phase==='setup'?'Not set up':phase==='error'?'Offline':'Connecting…';
   const dotCls=D||phase==='setup'?'loc':phase==='ready'?'on':'';
 
   let h=`<header class="top"><div><div class="eyebrow">5-stack · Flex queue role draft</div><h1>${esc(st.squad?.name||'Flex Smart Queue')}</h1>
@@ -556,11 +559,11 @@ function render(){
       <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs)}</div>
       <div class="row"><button class="btn primary" type="submit">Create squad</button><button type="button" class="btn ghost" data-act="demo">Preview with an example squad</button></div>
       <p class="note" style="margin:0">You'll be the captain: you control the settings and can remove members. Everyone else edits only their own roles.</p></form>
-      ${rec.length?`<section class="panel"><h2>Your squads</h2><div class="home-list">${rec.map(r=>`<a href="?squad=${encodeURIComponent(r.id)}"><span>${esc(r.name)}</span><span class="muted">Open →</span></a>`).join('')}</div></section>`:''}
+      ${rec.length?`<section class="panel"><h2>Your squads</h2><div class="home-list">${rec.map(r=>`<a href="?squad=${encodeURIComponent(r.id)}${T}"><span>${esc(r.name)}</span><span class="muted">Open →</span></a>`).join('')}</div></section>`:''}
       </div>`+footer();
     return;
   }
-  if(!D&&squadMissing){app.innerHTML=h+`<div class="stage"><div class="panel"><h2>Squad not found</h2><p class="muted" style="margin:0">This join link doesn't match a squad. Ask your captain to copy it again.</p><a class="btn" style="align-self:flex-start;text-decoration:none" href="./">Create your own squad</a></div></div>`+footer();return}
+  if(!D&&squadMissing){app.innerHTML=h+`<div class="stage"><div class="panel"><h2>Squad not found</h2><p class="muted" style="margin:0">This join link doesn't match a squad. Ask your captain to copy it again.</p><a class="btn" style="align-self:flex-start;text-decoration:none" href="./${TEST?'?test':''}">Create your own squad</a></div></div>`+footer();return}
 
   const joined=!!(myId&&st.players[myId]);
   const ids=Object.keys(st.players).sort((a,b)=>(st.players[a].created||0)-(st.players[b].created||0));
@@ -817,7 +820,10 @@ else{
     const base=`https://www.gstatic.com/firebasejs/${FB_VERSION}/`;
     const [fa,fauth,fs]=await Promise.all([import(base+'firebase-app.js'),import(base+'firebase-auth.js'),import(base+'firebase-firestore.js')]);
     const fbApp=fa.initializeApp(firebaseConfig);
-    const auth=fauth.getAuth(fbApp), db=fs.getFirestore(fbApp);
+    const auth=TEST
+      ?fauth.initializeAuth(fbApp,{persistence:fauth.browserSessionPersistence,popupRedirectResolver:fauth.browserPopupRedirectResolver})
+      :fauth.getAuth(fbApp);
+    const db=fs.getFirestore(fbApp);
     FB={auth,db,doc:fs.doc,setDoc:fs.setDoc,deleteDoc:fs.deleteDoc,collection:fs.collection,getDocs:fs.getDocs,writeBatch:fs.writeBatch,
         GoogleAuthProvider:fauth.GoogleAuthProvider,linkWithPopup:fauth.linkWithPopup,signInWithCredential:fauth.signInWithCredential};
     let subscribed=false;

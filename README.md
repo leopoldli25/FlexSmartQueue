@@ -134,6 +134,15 @@ The captain can tune all of this under **Draft settings**.
 
 The Firestore rules enforce this, not just the page. The join link is the only way in, so share it only with your squad.
 
+## Testing with several players on one computer
+
+Incognito tabs share one private session, so they all count as the same player. Add `test` to the address instead, and each tab becomes its own player until you close it:
+
+- Home: `https://YOUR-USERNAME.github.io/flex-smart-queue/?test`
+- A squad: `https://YOUR-USERNAME.github.io/flex-smart-queue/?squad=SQUAD-ID&test`
+
+Paste the address into each new tab rather than using "Duplicate tab" (duplicating copies the player). Test mode doesn't remember your name between squads. Delete test squads when you're done.
+
 ## Things to know
 
 - **Guests are tied to their browser.** If someone clears site data or opens the link on a new device, they show up as a new player. Fix: use **Keep me on other devices (Google)** at the bottom of the page (needs Google enabled in step 3). This matters most for the captain, since captain rights belong to that sign-in.
