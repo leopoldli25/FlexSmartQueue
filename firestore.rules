@@ -1,0 +1,52 @@
+rules_version = '2';
+
+// Flex Smart Queue
+// - Anyone signed in (guests included) can read a squad if they have its link.
+// - Each player can only create/edit/delete their own entry.
+// - Only the captain can change squad settings, add people by name, remove players or delete games.
+// - Squad members can run drafts and mark wins/losses.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function squadPath(sid) { return /databases/$(database)/documents/squads/$(sid); }
+    function isCaptain(sid) { return signedIn() && get(squadPath(sid)).data.captain == request.auth.uid; }
+    function isMember(sid) {
+      return signedIn() && exists(/databases/$(database)/documents/squads/$(sid)/players/$(request.auth.uid));
+    }
+    function validPlayer() {
+      let d = request.resource.data;
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 24
+        && d.prefs is list && d.prefs.size() == 5
+        && d.avoid is list && d.avoid.size() <= 5;
+    }
+
+    match /squads/{sid} {
+      allow get: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.captain == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 24;
+      allow update: if isCaptain(sid) && request.resource.data.captain == resource.data.captain;
+      allow delete: if false;
+
+      match /players/{pid} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && exists(squadPath(sid)) && validPlayer()
+          && (pid == request.auth.uid || (isCaptain(sid) && pid.matches('m-.*')));
+        allow delete: if signedIn() && (pid == request.auth.uid || isCaptain(sid));
+      }
+
+      match /games/{gid} {
+        allow read: if signedIn();
+        allow create, update: if isMember(sid);
+        allow delete: if isCaptain(sid);
+      }
+
+      match /live/{docId} {
+        allow read: if signedIn();
+        allow write: if docId == 'draft' && isMember(sid);
+      }
+    }
+  }
+}
