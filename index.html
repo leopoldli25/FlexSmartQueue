@@ -119,11 +119,21 @@ header.top p{margin:6px 0 0;max-width:60ch;color:var(--muted)}
 .prefs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
 .pref{display:grid;grid-template-columns:14px 22px 22px minmax(0,1fr) auto;gap:8px;align-items:center;padding:4px 6px;border-radius:6px;background:var(--surface)}
 .pref .n{font:600 .8rem var(--mono);color:var(--muted);text-align:center}
-.prefs.dnd{user-select:none;-webkit-user-select:none}
-.prefs.dnd .pref{cursor:grab}
-.prefs.sorting,.prefs.sorting .pref{cursor:grabbing}
-.grip{color:var(--muted);font-size:.9rem;line-height:1;text-align:center;touch-action:none;padding-block:6px}
-.pref.dragging{position:relative;z-index:1;background:var(--surface);outline:2px solid var(--accent);box-shadow:0 6px 18px color-mix(in srgb,var(--fg) 18%,transparent)}
+.bubbles{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px;position:relative;user-select:none;-webkit-user-select:none}
+.bubble{position:relative;display:inline-flex;align-items:center;gap:6px;padding:5px 4px 5px 5px;border-radius:999px;background:var(--surface);border:1px solid var(--line);cursor:grab;touch-action:none;font-weight:600;font-size:.9rem;transition:box-shadow .15s ease,border-color .15s ease,scale .15s ease}
+.bubble:hover{border-color:var(--accent)}
+.bubble .glyph{width:18px;height:18px}
+.bubble .rk{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 .74rem var(--mono)}
+.rk.r0{background:var(--good);color:var(--surface)} .rk.r1{background:var(--accent);color:var(--accent-ink)}
+.rk.r2{background:var(--surface-2);color:var(--fg)} .rk.r3{background:var(--warn);color:var(--surface)} .rk.r4{background:var(--bad);color:var(--surface)}
+.bubble .x{width:24px;height:24px;border-radius:50%;border:0;background:transparent;color:var(--muted);display:grid;place-items:center;font-size:.85rem;padding:0}
+.bubble .x:hover{color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent)}
+.bubble.avoid{border-color:color-mix(in srgb,var(--bad) 55%,var(--line));background:color-mix(in srgb,var(--bad) 9%,var(--surface))}
+.bubble.avoid .nm{text-decoration:line-through;text-decoration-color:var(--bad)}
+.bubble.avoid .x{color:var(--bad)}
+.bubble.lifted{z-index:3;cursor:grabbing;scale:1.07;border-color:var(--accent);box-shadow:0 10px 24px color-mix(in srgb,var(--fg) 22%,transparent);transition:none}
+.bubble:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.bubbles-hint{margin:6px 0 0;font-size:.8rem;color:var(--muted)}
 .pref.avoid{background:color-mix(in srgb,var(--bad) 10%,var(--surface))}
 .pref.avoid .name{text-decoration:line-through;text-decoration-color:var(--bad)}
 .pref .ctl{display:flex;gap:2px}
@@ -454,8 +464,8 @@ function ago(ts){const m=Math.round((Date.now()-ts)/60000);if(m<1)return'just no
 const av=n=>`<span class="mono-av">${esc((n||'?').trim().charAt(0).toUpperCase())}</span>`;
 
 function prefEditor(key,prefs,avoid){
-  return `<ol class="prefs dnd" data-key="${key}">${prefs.map((r,i)=>{const a=avoid.includes(r);return `<li class="pref ${a?'avoid':''}" data-r="${r}"><span class="grip" aria-hidden="true" title="Drag to reorder">⠿</span><span class="n">${i+1}</span>${glyph(r)}<span class="name">${RL[r]}</span>
-    <span class="ctl"><button type="button" class="icon-btn" data-act="up" data-id="${key}" data-i="${i}" ${i===0?'disabled':''} aria-label="Move ${RL[r]} up">▲</button><button type="button" class="icon-btn" data-act="down" data-id="${key}" data-i="${i}" ${i===4?'disabled':''} aria-label="Move ${RL[r]} down">▼</button><button type="button" class="icon-btn ${a?'on':''}" data-act="avoid" data-id="${key}" data-r="${r}" aria-pressed="${a}" title="Won't play ${RL[r]}" aria-label="Won't play ${RL[r]}">⊘</button></span></li>`}).join('')}</ol>`;
+  return `<ol class="bubbles" data-key="${key}" aria-label="Role ranking. Drag bubbles, or focus one and use the arrow keys.">${prefs.map((r,i)=>{const a=avoid.includes(r);
+    return `<li class="bubble ${a?'avoid':''}" data-r="${r}" tabindex="0" aria-label="${i+1}. ${RL[r]}${a?", won't play":''}"><span class="rk r${i}">${i+1}</span>${glyph(r)}<span class="nm">${RL[r]}</span><button type="button" class="x" data-act="avoid" data-id="${key}" data-r="${r}" aria-pressed="${a}" title="${a?'Unmark':"Won't play"} ${RL[r]}" aria-label="Won't play ${RL[r]}">⊘</button></li>`}).join('')}</ol>`;
 }
 function prefSummary(p){
   return `<div class="order">${p.prefs.map((r,i)=>`<span class="o ${(p.avoid||[]).includes(r)?'avoid':''}" title="${i+1}. ${RL[r]}${(p.avoid||[]).includes(r)?" (won't play)":''}">${glyph(r)}${RL[r].slice(0,3)}</span>`).join('')}</div>`;
@@ -498,7 +508,7 @@ function render(){
       <form class="panel" data-act="create"><h2>Create a squad</h2>
       <div><label class="lbl" for="cn-squad">Squad name</label><input class="field" style="width:100%" type="text" id="cn-squad" data-bind="cn.squad" value="${esc(ui.cn.squad)}" maxlength="24" placeholder="Optional. Blank uses the date and time"></div>
       <div><label class="lbl" for="cn-name">Your name</label><input class="field" style="width:100%" type="text" id="cn-name" data-bind="cn.name" value="${esc(ui.cn.name)}" maxlength="24"></div>
-      <div><span class="lbl">Your roles, favorite first (drag to reorder)</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}</div>
+      <div><span class="lbl">Your roles: drag the bubbles, favorite first</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}</div>
       <div class="row"><button class="btn primary" type="submit">Create squad</button><button type="button" class="btn ghost" data-act="demo">Preview with an example squad</button></div>
       <p class="note" style="margin:0">You'll be the captain: you control the settings and can remove members. Everyone else edits only their own roles.</p></form>
       ${rec.length?`<section class="panel"><h2>Your squads</h2><div class="home-list">${rec.map(r=>`<a href="?squad=${encodeURIComponent(r.id)}"><span>${esc(r.name)}</span><span class="muted">Open →</span></a>`).join('')}</div></section>`:''}
@@ -514,7 +524,7 @@ function render(){
   /* join card */
   const join=joined?'':`<form class="panel join" id="join" data-act="join"><div class="panel-head"><h2>Join ${esc(st.squad.name)}</h2><span class="eyebrow">${ids.length} in squad</span></div>
       <div><label class="lbl" for="jn-name">Your name</label><input class="field" style="width:100%" type="text" id="jn-name" data-bind="jn.name" value="${esc(ui.jn.name)}" maxlength="24"></div>
-      <div><span class="lbl">Your roles, favorite first (drag to reorder)</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}<p class="note" style="margin:6px 0 0">Use ⊘ on roles you refuse to play. You can change all of this later.</p></div>
+      <div><span class="lbl">Your roles: drag the bubbles, favorite first</span>${prefEditor('@join',ui.jn.prefs,ui.jn.avoid)}<p class="note" style="margin:6px 0 0">Use ⊘ on roles you refuse to play. You can change all of this later.</p></div>
       <div class="row"><button class="btn primary" type="submit">Join squad</button></div></form>`;
 
   /* draft panel */
@@ -662,35 +672,77 @@ app.addEventListener('change',e=>{
 app.addEventListener('keydown',e=>{if(e.target.dataset?.act==='rename'&&e.key==='Enter')e.target.blur()});
 app.addEventListener('focusout',()=>{setTimeout(()=>{if(pendingRender)render()},0)});
 
-/* ---------- drag to reorder roles (mouse: whole row, touch: the grip) ---------- */
+/* ---------- drag the role bubbles ---------- */
+const calm=matchMedia('(prefers-reduced-motion: reduce)');
 let drag=null;
+function renumber(ol){[...ol.children].forEach((x,i)=>{const k=x.querySelector('.rk');k.textContent=i+1;k.className='rk r'+i})}
+function flip(ol,moveFn){
+  // animate the other bubbles from where they were to where they land
+  const before=new Map([...ol.children].map(x=>[x,x.getBoundingClientRect()]));
+  moveFn();
+  if(calm.matches) return;
+  for(const x of ol.children){
+    if(drag&&x===drag.li) continue;
+    const a=before.get(x),b=x.getBoundingClientRect(),dx=a.left-b.left,dy=a.top-b.top;
+    if(dx||dy) x.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}],{duration:200,easing:'cubic-bezier(.2,.8,.2,1)'});
+  }
+}
+function follow(e){
+  const {li}=drag; li.style.transform='';
+  const r=li.getBoundingClientRect();
+  li.style.transform=`translate(${e.clientX-drag.gx-r.left}px,${e.clientY-drag.gy-r.top}px)`;
+}
 app.addEventListener('pointerdown',e=>{
-  const li=e.target.closest('.prefs.dnd .pref'); if(!li||e.button>0||e.target.closest('button')) return;
-  if(e.pointerType!=='mouse'&&!e.target.closest('.grip')) return;
-  const ol=li.parentElement;
-  drag={li,ol,key:ol.dataset.key,id:e.pointerId};
-  ol.setPointerCapture(e.pointerId);   // capture on the list: the row itself moves in the DOM
-  li.classList.add('dragging'); ol.classList.add('sorting');
+  const li=e.target.closest('.bubbles .bubble'); if(!li||e.button>0||e.target.closest('button')) return;
+  const ol=li.parentElement, r=li.getBoundingClientRect();
+  drag={li,ol,key:ol.dataset.key,id:e.pointerId,sx:e.clientX,sy:e.clientY,gx:e.clientX-r.left,gy:e.clientY-r.top,live:false};
+  ol.setPointerCapture(e.pointerId);
   e.preventDefault();
 });
 app.addEventListener('pointermove',e=>{
   if(!drag||e.pointerId!==drag.id) return;
   const {li,ol}=drag;
-  let before=null;
-  for(const x of ol.children){ if(x===li) continue; const r=x.getBoundingClientRect(); if(e.clientY<r.top+r.height/2){before=x;break} }
-  if(before!==li.nextElementSibling){ ol.insertBefore(li,before); [...ol.children].forEach((x,i)=>x.querySelector('.n').textContent=i+1) }
+  if(!drag.live){ if(Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)<4) return; drag.live=true; li.classList.add('lifted'); }
+  follow(e);
+  // nearest other bubble, by its resting position
+  let best=null,bd=Infinity;
+  for(const x of ol.children){ if(x===li) continue;
+    const c={x:x.offsetLeft+x.offsetWidth/2,y:x.offsetTop+x.offsetHeight/2}, o=ol.getBoundingClientRect();
+    const d=Math.hypot(e.clientX-o.left-c.x,e.clientY-o.top-c.y); if(d<bd){bd=d;best=x} }
+  if(!best||bd>best.offsetWidth) return;
+  const after=e.clientX-ol.getBoundingClientRect().left>best.offsetLeft+best.offsetWidth/2;
+  const ref=after?best.nextElementSibling:best;
+  if(ref===li||ref===li.nextElementSibling) return;
+  flip(ol,()=>{ol.insertBefore(li,ref);renumber(ol)});
+  follow(e);
 });
 function endDrag(e){
   if(!drag||e.pointerId!==drag.id) return;
-  const {li,ol,key}=drag; drag=null;
-  li.classList.remove('dragging'); ol.classList.remove('sorting');
+  const {li,ol,key,live}=drag; drag=null;
+  if(!live){ if(pendingRender) render(); else li.focus(); return; }
+  const from=li.style.transform; li.style.transform=''; li.classList.remove('lifted');
+  if(from&&!calm.matches) li.animate([{transform:from},{transform:'none'}],{duration:180,easing:'cubic-bezier(.2,.8,.2,1)'});
   const order=[...ol.children].map(x=>x.dataset.r);
+  setTimeout(()=>commitOrder(key,order),calm.matches?0:190);
+}
+function commitOrder(key,order){
   const cur=key==='@join'?ui.jn.prefs:V().players[key]?.prefs;
   if(!cur||order.join()===cur.join()){render();return}
   if(key==='@join'){ui.jn.prefs=order;render()} else savePlayer(key,{prefs:order});
 }
 app.addEventListener('pointerup',endDrag);
 app.addEventListener('pointercancel',endDrag);
+// keyboard: arrows move the focused bubble
+app.addEventListener('keydown',e=>{
+  const li=e.target.closest?.('.bubbles .bubble'); if(!li||e.target!==li) return;
+  const dir={ArrowLeft:-1,ArrowUp:-1,ArrowRight:1,ArrowDown:1}[e.key]; if(!dir) return;
+  e.preventDefault();
+  const ol=li.parentElement,key=ol.dataset.key,r=li.dataset.r,order=[...ol.children].map(x=>x.dataset.r),i=order.indexOf(r),j=i+dir;
+  if(j<0||j>4) return;
+  [order[i],order[j]]=[order[j],order[i]];
+  commitOrder(key,order);
+  document.querySelector(`.bubbles[data-key="${key}"] .bubble[data-r="${r}"]`)?.focus();
+});
 
 /* ---------- boot ---------- */
 render();
