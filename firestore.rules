@@ -3,7 +3,7 @@ rules_version = '2';
 // Flex Smart Queue
 // - Anyone signed in (guests included) can read a squad if they have its link.
 // - Each player can only create/edit/delete their own entry.
-// - Only the captain can change squad settings, add people by name, remove players or delete games.
+// - Only the captain can change squad settings, add people by name, remove players, delete games or delete the squad.
 // - Squad members can run drafts and mark wins/losses.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -28,7 +28,7 @@ service cloud.firestore {
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 24;
       allow update: if isCaptain(sid) && request.resource.data.captain == resource.data.captain;
-      allow delete: if false;
+      allow delete: if isCaptain(sid);
 
       match /players/{pid} {
         allow read: if signedIn();

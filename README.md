@@ -127,6 +127,7 @@ The captain can tune all of this under **Draft settings**.
 | Roll drafts, lock in, mark W/L | ✓ | ✓ | ✗ |
 | Change draft settings | ✓ | ✗ | ✗ |
 | Remove players, delete games | ✓ | ✗ (can leave) | ✗ |
+| Delete the whole squad | ✓ | ✗ | ✗ |
 
 The Firestore rules enforce this, not just the page. The join link is the only way in, so share it only with your squad.
 

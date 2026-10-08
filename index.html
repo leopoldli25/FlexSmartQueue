@@ -154,6 +154,7 @@ details.tune summary{cursor:pointer;font:600 .95rem var(--display);letter-spacin
 .slider label{display:flex;justify-content:space-between;font-weight:500;font-size:.9rem}
 .slider input{width:100%;accent-color:var(--accent)}
 .slider p{margin:2px 0 0;font-size:.8rem;color:var(--muted)}
+.panel.danger{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.85rem}
 @media (prefers-reduced-motion: no-preference){.slot{animation:drop .28s ease both}.slot:nth-child(2){animation-delay:.04s}.slot:nth-child(3){animation-delay:.08s}.slot:nth-child(4){animation-delay:.12s}.slot:nth-child(5){animation-delay:.16s}}
 @keyframes drop{from{transform:translateY(-4px);opacity:.4}to{transform:none;opacity:1}}
@@ -393,6 +394,26 @@ function addManual(name){
   name=cleanName(name); if(!name) return;
   write('players/m-'+uid(),{name,prefs:[...ROLES],avoid:[],created:Date.now(),manual:true});
 }
+async function deleteSquad(){
+  if(!FB||!SID||!isCaptain()) return;
+  ui.deleting=true; render();
+  const {db,doc,collection,getDocs,writeBatch}=FB;
+  try{
+    const [games,players]=await Promise.all([getDocs(collection(db,'squads',SID,'games')),getDocs(collection(db,'squads',SID,'players'))]);
+    // order matters: the captain's own entry and the squad go last, because the rules check them
+    const refs=[doc(db,'squads',SID,'live','draft'),...games.docs.map(d=>d.ref),
+      ...players.docs.filter(d=>d.id!==UID).map(d=>d.ref),doc(db,'squads',SID,'players',UID),doc(db,'squads',SID)];
+    for(let i=0;i<refs.length;i+=450){const b=writeBatch(db);refs.slice(i,i+450).forEach(r=>b.delete(r));await b.commit()}
+    try{localStorage.setItem(RECENT_KEY,JSON.stringify(recentSquads().filter(x=>x.id!==SID)))}catch(e){}
+    location.href=location.pathname;
+  }catch(e){
+    ui.deleting=false; ui.confirmDel=null;
+    toastMsg=e?.code==='permission-denied'
+      ?'Firebase refused the delete. Paste the latest firestore.rules into Firestore → Rules and publish, then try again.'
+      :'Could not delete the squad: '+(e?.message||e);
+    render();
+  }
+}
 function removePlayer(pid){
   const st=V();
   if((st.live.active||[]).includes(pid)) write('live/draft',{...st.live,active:activeIds(st).filter(x=>x!==pid),draft:null});
@@ -609,8 +630,16 @@ function render(){
     ${sl('window','Memory (games)',3,20,1,'How many recent games count for rotation and fairness.')}
     ${cap?'<button class="btn sm ghost" data-act="resetCfg" style="justify-self:start">Reset to defaults</button>':''}</div></details></section>`;
 
+  /* delete squad (captain only) */
+  const danger=cap&&!D?`<section class="panel danger"><div class="panel-head"><h2>Delete squad</h2></div>
+    ${ui.deleting?'<p class="muted" style="margin:0">Deleting…</p>':ui.confirmDel==='squad'
+      ?`<p style="margin:0">This permanently deletes <b>${esc(st.squad.name)}</b> for everyone: all players, role rankings and game history. It can't be undone.</p>
+        <div class="row"><button class="btn loss sel" data-act="delSquad">Delete forever</button><button class="btn ghost" data-act="cancelDel">Cancel</button></div>`
+      :`<p class="note" style="margin:0">Removes the squad and its game history for everyone. The join link stops working.</p>
+        <button class="btn sm loss" style="align-self:flex-start" data-act="askDelSquad">Delete squad…</button>`}</section>`:'';
+
   app.innerHTML=h+(join?`<div class="stage" style="margin:0 auto 4px">${join}</div>`:'')+
-    `<div class="grid ${join?'wide':''}"><div class="col">${draft}${gp}${hm}</div><div class="col">${inv}${mine}${sq}${tune}</div></div>`+footer();
+    `<div class="grid ${join?'wide':''}"><div class="col">${draft}${gp}${hm}</div><div class="col">${inv}${mine}${sq}${tune}${danger}</div></div>`+footer();
 }
 
 /* ---------- events ---------- */
@@ -634,6 +663,8 @@ app.addEventListener('click',e=>{
     case 'down':movePref(id,+b.dataset.i,1);break;
     case 'resetCfg':write('squad/main',{...V().squad,cfg:{...DEFAULT_CFG}});break;
     case 'copy':copyLink();break;
+    case 'askDelSquad':ui.confirmDel='squad';render();break;
+    case 'delSquad':deleteSquad();break;
     case 'google':linkGoogle();break;
     case 'dismiss':toastMsg='';render();break;
     case 'demo':startDemo();break;
@@ -742,7 +773,7 @@ else{
     const [fa,fauth,fs]=await Promise.all([import(base+'firebase-app.js'),import(base+'firebase-auth.js'),import(base+'firebase-firestore.js')]);
     const fbApp=fa.initializeApp(firebaseConfig);
     const auth=fauth.getAuth(fbApp), db=fs.getFirestore(fbApp);
-    FB={auth,db,doc:fs.doc,setDoc:fs.setDoc,deleteDoc:fs.deleteDoc,
+    FB={auth,db,doc:fs.doc,setDoc:fs.setDoc,deleteDoc:fs.deleteDoc,collection:fs.collection,getDocs:fs.getDocs,writeBatch:fs.writeBatch,
         GoogleAuthProvider:fauth.GoogleAuthProvider,linkWithPopup:fauth.linkWithPopup,signInWithCredential:fauth.signInWithCredential};
     let subscribed=false;
     fauth.onAuthStateChanged(auth,user=>{
