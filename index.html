@@ -119,11 +119,15 @@ header.top p{margin:6px 0 0;max-width:60ch;color:var(--muted)}
 .prefs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
 .pref{display:grid;grid-template-columns:14px 22px 22px minmax(0,1fr) auto;gap:8px;align-items:center;padding:4px 6px;border-radius:6px;background:var(--surface)}
 .pref .n{font:600 .8rem var(--mono);color:var(--muted);text-align:center}
-.bubbles{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;align-items:flex-start;gap:6px;position:relative;user-select:none;-webkit-user-select:none}
+.bubbles{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding-right:34px;position:relative;user-select:none;-webkit-user-select:none}
 .bubble{position:relative;display:flex;width:13rem;max-width:100%;align-items:center;gap:6px;padding:5px 4px 5px 5px;border-radius:999px;background:var(--surface);border:1px solid var(--line);cursor:grab;touch-action:none;font-weight:600;font-size:.9rem;transition:box-shadow .15s ease,border-color .15s ease,scale .15s ease}
 .bubble:hover{border-color:var(--accent)}
 .bubble .glyph{width:18px;height:18px}
 .bubble .nm{flex:1;min-width:0}
+.tie{position:absolute;right:-32px;bottom:-17px;width:24px;height:24px;border-radius:50%;padding:0;display:grid;place-items:center;font:700 .85rem var(--mono);border:1px dashed var(--line);background:var(--bg);color:var(--muted);z-index:1}
+.tie:hover{border-color:var(--accent);color:var(--accent)}
+.tie.on{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink)}
+.bubble.lifted .tie{visibility:hidden}
 .bubble .rk{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 .74rem var(--mono)}
 .rk.r0{background:var(--good);color:var(--surface)} .rk.r1{background:var(--accent);color:var(--accent-ink)}
 .rk.r2{background:var(--amber);color:#1d1600} .rk.r3{background:var(--warn);color:var(--surface)} .rk.r4{background:var(--bad);color:var(--surface)}
@@ -212,11 +216,12 @@ const S=emptyState();
 let D=null;               // example squad, kept in memory only
 let phase='connecting';   // connecting | ready | setup | error
 let FB=null, UID=null, AUTH_USER=null, squadLoaded=false, squadMissing=false, pendingRender=false, toastMsg='';
-function loadProfile(){try{const p=JSON.parse(localStorage.getItem(PROFILE_KEY)||'null');if(p&&p.name)return{name:cleanName(p.name),prefs:Array.isArray(p.prefs)&&p.prefs.length===5&&ROLES.every(r=>p.prefs.includes(r))?p.prefs:[...ROLES]}}catch(e){}return null}
-function saveProfile(name,prefs){if(TEST)return;try{localStorage.setItem(PROFILE_KEY,JSON.stringify({name:cleanName(name),prefs:[...prefs]}))}catch(e){}PROFILE=loadProfile()||{name:cleanName(name),prefs:[...prefs]}}
+function loadProfile(){try{const p=JSON.parse(localStorage.getItem(PROFILE_KEY)||'null');if(p&&p.name)return{name:cleanName(p.name),prefs:Array.isArray(p.prefs)&&p.prefs.length===5&&ROLES.every(r=>p.prefs.includes(r))?p.prefs:[...ROLES],tied:cleanTied(p.tied)}}catch(e){}return null}
+function saveProfile(name,prefs,tied){if(TEST)return;try{localStorage.setItem(PROFILE_KEY,JSON.stringify({name:cleanName(name),prefs:[...prefs],tied:cleanTied(tied)}))}catch(e){}PROFILE=loadProfile()}
 const cleanName=n=>String(n||'').trim().slice(0,24);
+const cleanTied=t=>Array.from({length:4},(_,i)=>!!(Array.isArray(t)&&t[i]));
 let PROFILE=TEST?null:loadProfile();
-const freshJoin=()=>({name:PROFILE?.name||'',prefs:[...(PROFILE?.prefs||ROLES)],avoid:[]});
+const freshJoin=()=>({name:PROFILE?.name||'',prefs:[...(PROFILE?.prefs||ROLES)],tied:cleanTied(PROFILE?.tied),avoid:[]});
 const ui={swap:null,confirmDel:null,jn:freshJoin(),cn:{squad:'',name:PROFILE?.name||''},copied:false,editName:false};
 
 const V=()=>D||S;
@@ -275,7 +280,9 @@ function write(path,data){
 }
 
 /* ---------- the matchmaker ---------- */
-function rankOf(p,role){const i=(p?.prefs||ROLES).indexOf(role);return i<0?4:i}
+// position -> rank, with ties sharing the higher rank and pushing the rest down (1,1,3,4,5)
+function slotRank(i,tied){while(i>0&&tied?.[i-1])i--;return i}
+function rankOf(p,role){const i=(p?.prefs||ROLES).indexOf(role);return i<0?4:slotRank(i,p?.tied)}
 function sortedGames(st){return Object.entries(st.games).map(([id,g])=>({id,...g})).sort((a,b)=>b.at-a.at)}
 
 function profile(st,pid){
@@ -326,7 +333,7 @@ function reasons(st,pid,role,lineup){
   const last=prof.h.slice(0,3), same=last.filter(g=>g.lineup[pid]===role).length;
   if(same) out.push([same>=2?'warn':'', `Played ${RL[role]} ${same} of last ${last.length}`]);
   if(r>0){
-    const top=p.prefs[0], who=Object.keys(lineup).find(k=>lineup[k]===top);
+    const tops=p.prefs.filter(x=>rankOf(p,x)===0), top=tops.find(x=>Object.values(lineup).includes(x))||tops[0], who=Object.keys(lineup).find(k=>lineup[k]===top);
     if(prof.rep[top]>=.9) out.push(['',`Rotated off ${RL[top]} after recent games`]);
     else if(who) out.push(['',`${RL[top]} went to ${pname(st,who)}`]);
   }
@@ -375,7 +382,7 @@ function savePlayer(pid,patch){
   // avoid stays an empty list: refusing roles was removed, but the published Firestore rules still expect the field
   const next={...p,prefs:[...p.prefs],avoid:[],...patch};
   write('players/'+pid,next);
-  if(pid===me()&&!D) saveProfile(next.name,next.prefs);
+  if(pid===me()&&!D) saveProfile(next.name,next.prefs,next.tied);
 }
 function movePref(pid,i,dir){
   const j=i+dir; if(j<0||j>4) return;
@@ -400,23 +407,23 @@ function joinSquad(){
   const name=cleanName(ui.jn.name), id=me(); if(!name||!id) return;
   if(nameTaken(name,id)){ui.editName=true;render();return}
   const st=V();
-  write('players/'+id,{name,prefs:[...ui.jn.prefs],avoid:[],created:Date.now()});
+  write('players/'+id,{name,prefs:[...ui.jn.prefs],tied:cleanTied(ui.jn.tied),avoid:[],created:Date.now()});
   // members may only add themselves to the raw list (rules compare it exactly)
   const raw=st.live.active||[]; if(raw.length<5&&!raw.includes(id)) write('live/draft',{...st.live,active:[...raw,id]});
-  if(!D) saveProfile(name,ui.jn.prefs);
+  if(!D) saveProfile(name,ui.jn.prefs,ui.jn.tied);
   ui.editName=false; ui.jn=freshJoin();
 }
 // e.g. "Oct 8, 9:41 PM Flex"
 const defaultSquadName=()=>cleanName(new Date().toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})+' Flex');
 async function createSquad(){
   const name=cleanName(ui.cn.name); if(!name||!FB||!UID) return;
-  saveProfile(name,ui.jn.prefs);
+  saveProfile(name,ui.jn.prefs,ui.jn.tied);
   const sq=cleanName(ui.cn.squad)||defaultSquadName();
   const sid=Array.from(crypto.getRandomValues(new Uint8Array(10)),b=>'abcdefghijkmnpqrstuvwxyz23456789'[b%32]).join('');
   const {doc,db,setDoc}=FB;
   try{
     await setDoc(doc(db,'squads',sid),{name:sq,captain:UID,created:Date.now(),cfg:{...DEFAULT_CFG}});
-    await setDoc(doc(db,'squads',sid,'players',UID),{name,prefs:[...ui.jn.prefs],avoid:[],created:Date.now()});
+    await setDoc(doc(db,'squads',sid,'players',UID),{name,prefs:[...ui.jn.prefs],tied:cleanTied(ui.jn.tied),avoid:[],created:Date.now()});
     await setDoc(doc(db,'squads',sid,'live','draft'),{active:[UID],draft:null});
     rememberSquad(sid,sq);
     location.href=joinUrl(sid)+T;
@@ -523,12 +530,14 @@ function nameField(id,bind,val){
     return `<div class="known"><span class="muted">${bind==='cn.name'?'Captain':'Joining as'}</span> <b>${esc(val)}</b> <button type="button" class="btn sm ghost" data-act="editName">Change</button></div>`;
   return `<div><label class="lbl" for="${id}">Your name</label><input class="field" style="width:100%" type="text" id="${id}" data-bind="${bind}" value="${esc(val)}" maxlength="24"></div>`;
 }
-function prefEditor(key,prefs){
-  return `<ol class="bubbles" data-key="${key}" aria-label="Role ranking. Drag bubbles, or focus one and use the arrow keys.">${prefs.map((r,i)=>
-    `<li class="bubble" data-r="${r}" tabindex="0" aria-label="${i+1}. ${RL[r]}"><span class="rk r${i}">${i+1}</span>${glyph(r)}<span class="nm">${RL[r]}</span></li>`).join('')}</ol>`;
+function prefEditor(key,prefs,tied){
+  tied=cleanTied(tied);
+  return `<ol class="bubbles" data-key="${key}" data-tied="${tied.map(Number).join('')}" aria-label="Role ranking. Drag bubbles, or focus one and use the arrow keys. Use = to tie two roles.">${prefs.map((r,i)=>{const k=slotRank(i,tied);
+    return `<li class="bubble" data-r="${r}" tabindex="0" aria-label="${k+1}. ${RL[r]}"><span class="rk r${k}">${k+1}</span>${glyph(r)}<span class="nm">${RL[r]}</span>${i<4?`<button type="button" class="tie ${tied[i]?'on':''}" data-act="tie" data-id="${key}" data-i="${i}" aria-pressed="${tied[i]}" title="${tied[i]?'Untie':'Tie'} this spot with the one below">=</button>`:''}</li>`}).join('')}</ol>`;
 }
 function prefSummary(p){
-  return `<div class="order">${p.prefs.map((r,i)=>`<span class="o" title="${i+1}. ${RL[r]}">${glyph(r)}${RL[r].slice(0,3)}</span>`).join('')}</div>`;
+  const t=cleanTied(p.tied);
+  return `<div class="order">${p.prefs.map((r,i)=>`${i&&t[i-1]?'<span class="muted">=</span>':''}<span class="o" title="${slotRank(i,t)+1}. ${RL[r]}">${glyph(r)}${RL[r].slice(0,3)}</span>`).join('')}</div>`;
 }
 function owedMeter(st,id){
   const d=profile(st,id).debt;
@@ -568,7 +577,7 @@ function render(){
       <form class="panel" data-act="create"><h2>Create a squad</h2>
       <div><label class="lbl" for="cn-squad">Squad name</label><input class="field" style="width:100%" type="text" id="cn-squad" data-bind="cn.squad" value="${esc(ui.cn.squad)}" maxlength="24" placeholder="Optional. Blank uses the date and time"></div>
       ${nameField('cn-name','cn.name',ui.cn.name)}
-      <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs)}</div>
+      <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs,ui.jn.tied)}</div>
       <div class="row"><button class="btn primary" type="submit">Create squad</button><button type="button" class="btn ghost" data-act="demo">Preview with an example squad</button></div>
       <p class="note" style="margin:0">You'll be the captain: you control the settings and can remove members. Everyone else edits only their own roles.</p></form>
       ${rec.length?`<section class="panel"><h2>Your squads</h2><div class="home-list">${rec.map(r=>`<a href="?squad=${encodeURIComponent(r.id)}${T}"><span>${esc(r.name)}</span><span class="muted">Open →</span></a>`).join('')}</div></section>`:''}
@@ -584,7 +593,7 @@ function render(){
   /* join card */
   const join=joined?'':`<form class="panel join" id="join" data-act="join"><div class="panel-head"><h2>Join ${esc(st.squad.name)}</h2><span class="eyebrow">${ids.length} in squad</span></div>
       ${nameField('jn-name','jn.name',ui.jn.name)}
-      <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs)}<p class="note" style="margin:6px 0 0">Everyone plays every role sometimes. Your order decides how often. You can change it later.</p></div>
+      <div><span class="lbl">Your roles: drag the bubbles, favorite on top</span>${prefEditor('@join',ui.jn.prefs,ui.jn.tied)}<p class="note" style="margin:6px 0 0">Everyone plays every role sometimes. Your order decides how often. You can change it later.</p></div>
       ${act.length>=5?'<div class="notice">The starting 5 is full, so you\'ll join as a reserve. The captain can swap you in, and your game history follows you.</div>':''}
       <div class="row"><button class="btn primary" type="submit">Join squad</button></div></form>`;
 
@@ -656,7 +665,7 @@ function render(){
     mine=`<section class="panel"><div class="panel-head"><h2>Your roles</h2><span class="row"><span class="tag ${meStart?'good':''}">${meStart?'Starter':'Reserve'}</span>${cap?lineupBtn(myId,meStart,act):''}<span class="you">You</span></span></div>
       <div class="pcard-head">${av(p.name)}<input type="text" id="my-name" value="${esc(p.name)}" data-act="rename" data-id="${myId}" aria-label="Your name" maxlength="24"></div>
       ${fillToggle(myId,p)}
-      <div class="${p.fill?'filling':''}">${prefEditor(myId,p.prefs)}</div>${owedMeter(st,myId)}
+      <div class="${p.fill?'filling':''}">${prefEditor(myId,p.prefs,p.tied)}</div>${owedMeter(st,myId)}
       ${ui.confirmDel==='p'+myId?`<div class="confirm">Leave the squad? Your past games stay in the log. <button class="btn sm loss" data-act="delPlayer" data-id="${myId}">Leave</button><button class="btn sm ghost" data-act="cancelDel">Stay</button></div>`:(cap?'':`<button class="btn sm ghost" style="align-self:flex-start" data-act="askDelPlayer" data-id="${myId}">Leave squad</button>`)}</section>`;
   }
 
@@ -672,7 +681,7 @@ function render(){
     const head=edit?`<input type="text" id="name-${id}" value="${esc(p.name)}" data-act="rename" data-id="${id}" aria-label="Player name" maxlength="24">`:`<span class="pn">${esc(p.name)}</span>`;
     return `<div class="pcard"><div class="pcard-head">${av(p.name)}${head}${p.manual?'<span class="tag" title="Added by the captain">Added</span>':''}
       ${cap?lineupBtn(id,act.includes(id),act):''}${cap?`<button class="icon-btn" data-act="askDelPlayer" data-id="${id}" title="Remove player" aria-label="Remove ${esc(p.name)}">✕</button>`:''}</div>
-      ${edit?fillToggle(id,p)+`<div class="${p.fill?'filling':''}">${prefEditor(id,p.prefs)}</div>`:(p.fill?'<span class="tag good" style="align-self:flex-start">On fill</span>':'')+prefSummary(p)}${owedMeter(st,id)}${del}</div>`;
+      ${edit?fillToggle(id,p)+`<div class="${p.fill?'filling':''}">${prefEditor(id,p.prefs,p.tied)}</div>`:(p.fill?'<span class="tag good" style="align-self:flex-start">On fill</span>':'')+prefSummary(p)}${owedMeter(st,id)}${del}</div>`;
   };
   if(starters.length) sq+=`<h3 class="grp">Starting 5 <span class="muted">${act.length}/5</span></h3><div class="players">${starters.map(card).join('')}</div>`;
   if(reserves.length) sq+=`<h3 class="grp">Reserves <span class="muted">${reserves.length}</span></h3><div class="players">${reserves.map(card).join('')}</div>`;
@@ -728,6 +737,7 @@ app.addEventListener('click',e=>{
     case 'down':movePref(id,+b.dataset.i,1);break;
     case 'resetCfg':write('squad/main',{...V().squad,cfg:{...DEFAULT_CFG}});break;
     case 'copy':copyLink();break;
+    case 'tie':toggleTie(id,+b.dataset.i);break;
     case 'allGames':ui.allGames=!ui.allGames;render();break;
     case 'editName':ui.editName=true;render();setTimeout(()=>document.getElementById('jn-name')?.focus()||document.getElementById('cn-name')?.focus(),0);break;
     case 'askDelSquad':ui.confirmDel='squad';render();break;
@@ -761,7 +771,7 @@ app.addEventListener('focusout',()=>{setTimeout(()=>{if(pendingRender)render()},
 /* ---------- drag the role bubbles ---------- */
 const calm=matchMedia('(prefers-reduced-motion: reduce)');
 let drag=null;
-function renumber(ol){[...ol.children].forEach((x,i)=>{const k=x.querySelector('.rk');k.textContent=i+1;k.className='rk r'+i})}
+function renumber(ol){const t=[...(ol.dataset.tied||'')].map(c=>c==='1');[...ol.children].forEach((x,i)=>{const r=slotRank(i,t),k=x.querySelector('.rk');k.textContent=r+1;k.className='rk r'+r})}
 function flip(ol,moveFn){
   // animate the other bubbles from where they were to where they land
   const before=new Map([...ol.children].map(x=>[x,x.getBoundingClientRect()]));
@@ -810,6 +820,11 @@ function endDrag(e){
   if(from&&!calm.matches) li.animate([{transform:from},{transform:'none'}],{duration:180,easing:'cubic-bezier(.2,.8,.2,1)'});
   const order=[...ol.children].map(x=>x.dataset.r);
   setTimeout(()=>commitOrder(key,order),calm.matches?0:190);
+}
+function toggleTie(key,i){
+  const src=key==='@join'?ui.jn:V().players[key]; if(!src) return;
+  const tied=cleanTied(src.tied); tied[i]=!tied[i];
+  if(key==='@join'){ui.jn.tied=tied;render()} else savePlayer(key,{tied});
 }
 function commitOrder(key,order){
   const cur=key==='@join'?ui.jn.prefs:V().players[key]?.prefs;
