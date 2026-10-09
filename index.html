@@ -158,6 +158,10 @@ details.tune summary{cursor:pointer;font:600 .95rem var(--display);letter-spacin
 .known{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .known b{font-weight:600}
 .grp{font:600 .8rem var(--mono);letter-spacing:.1em;text-transform:uppercase;margin:4px 0 -4px}
+.pfill{color:var(--good);background:color-mix(in srgb,var(--good) 14%,transparent)}
+.fill-toggle{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer;font-size:.9rem}
+.fill-toggle input{width:18px;height:18px;accent-color:var(--good);flex:none}
+.filling .bubbles{opacity:.4}
 .confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.85rem}
 @media (prefers-reduced-motion: no-preference){.slot{animation:drop .28s ease both}.slot:nth-child(2){animation-delay:.04s}.slot:nth-child(3){animation-delay:.08s}.slot:nth-child(4){animation-delay:.12s}.slot:nth-child(5){animation-delay:.16s}}
 @keyframes drop{from{transform:translateY(-4px);opacity:.4}to{transform:none;opacity:1}}
@@ -279,17 +283,18 @@ function profile(st,pid){
   const all=sortedGames(st).filter(g=>g.lineup&&g.lineup[pid]);
   const h=all.slice(0,N);
   const rep={};ROLES.forEach(r=>rep[r]=0);
+  h.forEach((g,k)=>{rep[g.lineup[pid]]+=Math.pow(.6,k)});   // rotation counts every game, fill included
+  // Owed only looks at games you weren't on fill for
   let debt=0,wsum=0;
-  h.forEach((g,k)=>{
-    const role=g.lineup[pid];
-    rep[role]+=Math.pow(.6,k);
-    const rk=g.picks?.[pid]??rankOf(p,role);
+  all.filter(g=>!g.fill?.[pid]).slice(0,N).forEach((g,k)=>{
+    const rk=g.picks?.[pid]??rankOf(p,g.lineup[pid]);
     const w=Math.pow(.8,k); debt+=PREF[rk]*w; wsum+=w;
   });
   debt=debt/(wsum+1);   // shrinks toward 0 when there is little history
   return {debt,rep,h};
 }
 function cost(p,prof,role,cfg){
+  if(p.fill) return 0;   // fill: no preference of their own, they take whatever helps everyone else most
   const r=rankOf(p,role);
   const base=PREF[r];
   const fair=base*(1+cfg.wFair*prof.debt/3);
@@ -315,6 +320,7 @@ function solve(st,active){
 }
 function reasons(st,pid,role,lineup){
   const p=st.players[pid]; if(!p) return [];
+  if(p.fill) return [['good','On fill: took the role that helped the squad most']];
   const prof=profile(st,pid), r=rankOf(p,role), out=[];
   const last=prof.h.slice(0,3), same=last.filter(g=>g.lineup[pid]===role).length;
   if(same) out.push([same>=2?'warn':'', `Played ${RL[role]} ${same} of last ${last.length}`]);
@@ -347,8 +353,9 @@ function swapPick(pid){
 }
 function lockIn(){
   const st=V(),d=st.live.draft; if(!d) return;
-  const picks={};Object.entries(d.lineup).forEach(([pid,r])=>picks[pid]=rankOf(st.players[pid],r));
-  write('games/'+uid(),{at:Date.now(),lineup:{...d.lineup},picks,result:null});
+  const picks={},fill={};
+  Object.entries(d.lineup).forEach(([pid,r])=>{picks[pid]=rankOf(st.players[pid],r);if(st.players[pid]?.fill)fill[pid]=true});
+  write('games/'+uid(),{at:Date.now(),lineup:{...d.lineup},picks,fill,result:null});
   write('live/draft',{...st.live,draft:null});
 }
 // starting 5 vs reserves: only the captain moves people (rules enforce it)
@@ -501,6 +508,10 @@ function startDemo(){
 function ago(ts){const m=Math.round((Date.now()-ts)/60000);if(m<1)return'just now';if(m<60)return m+'m ago';const h=Math.round(m/60);if(h<24)return h+'h ago';return Math.round(h/24)+'d ago'}
 const av=n=>`<span class="mono-av">${esc((n||'?').trim().charAt(0).toUpperCase())}</span>`;
 
+function fillToggle(id,p){
+  return `<label class="fill-toggle"><input type="checkbox" id="fill-${id}" data-act="fill" data-id="${id}" ${p.fill?'checked':''}><span><b>Fill</b>: I'll play whatever helps the squad most</span></label>
+    ${p.fill?'<p class="note" style="margin:0">Your ranking is ignored while you\'re on fill, and fill games don\'t add to your Owed meter.</p>':''}`;
+}
 function lineupBtn(id,starting,act){
   if(starting) return ui.swapIn?`<button class="btn sm loss" data-act="bench" data-id="${id}">Swap out</button>`:`<button class="btn sm" data-act="bench" data-id="${id}" title="Move to reserves">Bench</button>`;
   if(ui.swapIn===id) return `<span class="tag warn">Swapping in…</span>`;
@@ -578,7 +589,7 @@ function render(){
 
   /* draft panel */
   let draft=`<section class="panel" id="draft"><div class="panel-head"><h2>Draft</h2><span class="eyebrow">Starting ${act.length}/5</span></div>`;
-  draft+=`<div class="chips" aria-label="Starting 5">${act.map(id=>`<span class="chip on">${av(st.players[id].name)}${esc(st.players[id].name)}</span>`).join('')||'<span class="muted">Nobody in the starting 5 yet.</span>'}</div>`;
+  draft+=`<div class="chips" aria-label="Starting 5">${act.map(id=>`<span class="chip on">${av(st.players[id].name)}${esc(st.players[id].name)}${st.players[id].fill?' <span class="tag good">Fill</span>':''}</span>`).join('')||'<span class="muted">Nobody in the starting 5 yet.</span>'}</div>`;
   if(act.length<5&&act.length>0) draft+=`<p class="note" style="margin:0">${5-act.length} open slot${5-act.length>1?'s':''} will go to a random.${cap&&ids.length>act.length?' Start someone from the reserves to fill it.':''}</p>`;
   if(!cap) draft+=`<p class="note" style="margin:0">The captain runs the draft and logs results. You'll see it update here live.</p>`;
   draft+=`<div class="row"><button class="btn primary" data-act="roll" ${act.length&&play?'':'disabled'}>${d?'Redraft':'Draft roles'}</button>`;
@@ -591,7 +602,7 @@ function render(){
       if(!pid) return `<div class="slot" style="opacity:.6"><div class="role">${glyph(r)}${RL[r]}</div><div class="who muted">Random teammate</div><span></span></div>`;
       const rk=rankOf(st.players[pid],r), rs=reasons(st,pid,r,lu);
       return `<button class="slot ${ui.swap===pid?'sel':''}" data-act="swap" data-id="${pid}" ${play?'':'disabled'} aria-label="${esc(pname(st,pid))} on ${RL[r]}. Click two players to swap them.">
-        <div class="role">${glyph(r)}${RL[r]}</div><div class="who">${esc(pname(st,pid))}</div><span class="pick p${rk}">${PICK[rk]}</span>
+        <div class="role">${glyph(r)}${RL[r]}</div><div class="who">${esc(pname(st,pid))}</div>${st.players[pid]?.fill?'<span class="pick pfill">Fill</span>':`<span class="pick p${rk}">${PICK[rk]}</span>`}
         ${rs.length?`<div class="reasons">${rs.map(([c,t])=>`<span class="tag ${c}">${esc(t)}</span>`).join('')}</div>`:''}</button>`;
     }).join('')}</div>`;
     draft+=`<p class="note" style="margin:0">${ui.swap?'Now click the player to swap with.':'Tap two players to swap their roles.'}${d.edited?' Lineup edited by hand.':''} Drafted ${ago(d.at)}.</p>`;
@@ -604,12 +615,13 @@ function render(){
   const games=sortedGames(st);
   let gp=`<section class="panel" id="games"><div class="panel-head"><h2>Games</h2><span class="eyebrow">${games.filter(g=>g.result==='win').length}W ${games.filter(g=>g.result==='loss').length}L</span></div>`;
   if(!games.length) gp+=`<div class="empty">Locked-in lineups show up here. Mark each one Win or Loss to keep your record. Results don't affect the draft.</div>`;
-  else gp+=`<div class="games">${games.slice(0,15).map(g=>{
+  else gp+=`<div class="games">${(ui.allGames?games:games.slice(0,15)).map(g=>{
     const lu=ROLES.filter(r=>Object.values(g.lineup).includes(r)).map(r=>{const pid=Object.keys(g.lineup).find(k=>g.lineup[k]===r);return `${RL[r]} <b>${esc(pname(st,pid))}</b>`}).join(' · ');
     const ctl=ui.confirmDel==='g'+g.id?`<span class="confirm">Delete this game? <button class="btn sm loss" data-act="delGame" data-id="${g.id}">Delete</button><button class="btn sm ghost" data-act="cancelDel">Keep</button></span>`
       :`<span class="row"><button class="btn sm win ${g.result==='win'?'sel':''}" data-act="res" data-id="${g.id}" data-v="win" ${play?'':'disabled'}>W</button><button class="btn sm loss ${g.result==='loss'?'sel':''}" data-act="res" data-id="${g.id}" data-v="loss" ${play?'':'disabled'}>L</button>${cap?`<button class="icon-btn" data-act="askDelGame" data-id="${g.id}" title="Delete game" aria-label="Delete game">✕</button>`:''}</span>`;
     return `<div class="game ${g.result?'':'pending'}"><span class="when">${g.result?ago(g.at):'In progress'}</span><div class="lu">${lu}</div>${ctl}</div>`;
   }).join('')}</div>`;
+  if(games.length>15) gp+=`<button class="btn sm ghost" style="align-self:flex-start" data-act="allGames">${ui.allGames?'Show recent only':`Show all ${games.length} games`}</button>`;
   gp+=`</section>`;
 
   /* heatmap */
@@ -618,12 +630,12 @@ function render(){
     const recent=games.slice(0,20);
     const rows=ids.map(id=>{
       const cnt={};ROLES.forEach(r=>cnt[r]=0);let n=0,rs=0,w=0,l=0;
-      recent.forEach(g=>{const r=g.lineup[id];if(!r)return;cnt[r]++;n++;rs+=(g.picks?.[id]??rankOf(st.players[id],r))+1;if(g.result==='win')w++;if(g.result==='loss')l++;});
+      recent.forEach(g=>{const r=g.lineup[id];if(!r)return;cnt[r]++;if(!g.fill?.[id]){n++;rs+=(g.picks?.[id]??rankOf(st.players[id],r))+1}if(g.result==='win')w++;if(g.result==='loss')l++;});
       return {id,cnt,avg:n?rs/n:null,w,l};
     });
     const max=Math.max(1,...rows.flatMap(r=>ROLES.map(x=>r.cnt[x])));
     hm=`<section class="panel" id="history"><div class="panel-head"><h2>Who played what</h2><span class="eyebrow">Last ${Math.min(20,games.length)} games</span></div>
-      <div class="tablewrap"><table class="heat"><thead><tr><th></th>${ROLES.map(r=>`<th title="${RL[r]}">${RL[r].slice(0,3)}</th>`).join('')}<th title="Average pick number they got (1 = first choice)">Avg pick</th><th>W–L</th></tr></thead><tbody>
+      <div class="tablewrap"><table class="heat"><thead><tr><th></th>${ROLES.map(r=>`<th title="${RL[r]}">${RL[r].slice(0,3)}</th>`).join('')}<th title="Average pick number they got (1 = first choice). Fill games don't count.">Avg pick</th><th>W–L</th></tr></thead><tbody>
       ${rows.map(r=>`<tr><th class="pl">${esc(pname(st,r.id))}</th>${ROLES.map(x=>{const v=r.cnt[x],pct=Math.round(v/max*70),pref=rankOf(st.players[r.id],x);
         return `<td style="background:color-mix(in srgb,var(${pref>=3?'--bad':'--accent'}) ${pct}%,var(--surface-2));color:${pct>45?'var(--surface)':'var(--fg)'}" title="${esc(pname(st,r.id))}: ${v} on ${RL[x]} (${PICK[pref]})">${v||'·'}</td>`}).join('')}
         <td class="stat">${r.avg?r.avg.toFixed(1):'–'}</td><td class="stat">${r.w}–${r.l}</td></tr>`).join('')}
@@ -642,7 +654,8 @@ function render(){
     const meStart=act.includes(myId);
     mine=`<section class="panel"><div class="panel-head"><h2>Your roles</h2><span class="row"><span class="tag ${meStart?'good':''}">${meStart?'Starter':'Reserve'}</span>${cap?lineupBtn(myId,meStart,act):''}<span class="you">You</span></span></div>
       <div class="pcard-head">${av(p.name)}<input type="text" id="my-name" value="${esc(p.name)}" data-act="rename" data-id="${myId}" aria-label="Your name" maxlength="24"></div>
-      ${prefEditor(myId,p.prefs)}${owedMeter(st,myId)}
+      ${fillToggle(myId,p)}
+      <div class="${p.fill?'filling':''}">${prefEditor(myId,p.prefs)}</div>${owedMeter(st,myId)}
       ${ui.confirmDel==='p'+myId?`<div class="confirm">Leave the squad? Your past games stay in the log. <button class="btn sm loss" data-act="delPlayer" data-id="${myId}">Leave</button><button class="btn sm ghost" data-act="cancelDel">Stay</button></div>`:(cap?'':`<button class="btn sm ghost" style="align-self:flex-start" data-act="askDelPlayer" data-id="${myId}">Leave squad</button>`)}</section>`;
   }
 
@@ -658,7 +671,7 @@ function render(){
     const head=edit?`<input type="text" id="name-${id}" value="${esc(p.name)}" data-act="rename" data-id="${id}" aria-label="Player name" maxlength="24">`:`<span class="pn">${esc(p.name)}</span>`;
     return `<div class="pcard"><div class="pcard-head">${av(p.name)}${head}${p.manual?'<span class="tag" title="Added by the captain">Added</span>':''}
       ${cap?lineupBtn(id,act.includes(id),act):''}${cap?`<button class="icon-btn" data-act="askDelPlayer" data-id="${id}" title="Remove player" aria-label="Remove ${esc(p.name)}">✕</button>`:''}</div>
-      ${edit?prefEditor(id,p.prefs):prefSummary(p)}${owedMeter(st,id)}${del}</div>`;
+      ${edit?fillToggle(id,p)+`<div class="${p.fill?'filling':''}">${prefEditor(id,p.prefs)}</div>`:(p.fill?'<span class="tag good" style="align-self:flex-start">On fill</span>':'')+prefSummary(p)}${owedMeter(st,id)}${del}</div>`;
   };
   if(starters.length) sq+=`<h3 class="grp">Starting 5 <span class="muted">${act.length}/5</span></h3><div class="players">${starters.map(card).join('')}</div>`;
   if(reserves.length) sq+=`<h3 class="grp">Reserves <span class="muted">${reserves.length}</span></h3><div class="players">${reserves.map(card).join('')}</div>`;
@@ -710,6 +723,7 @@ app.addEventListener('click',e=>{
     case 'down':movePref(id,+b.dataset.i,1);break;
     case 'resetCfg':write('squad/main',{...V().squad,cfg:{...DEFAULT_CFG}});break;
     case 'copy':copyLink();break;
+    case 'allGames':ui.allGames=!ui.allGames;render();break;
     case 'editName':ui.editName=true;render();setTimeout(()=>document.getElementById('jn-name')?.focus()||document.getElementById('cn-name')?.focus(),0);break;
     case 'askDelSquad':ui.confirmDel='squad';render();break;
     case 'delSquad':deleteSquad();break;
@@ -733,6 +747,7 @@ app.addEventListener('input',e=>{
 app.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.act==='rename') rename(t.dataset.id,t.value);
+  if(t.dataset.act==='fill') savePlayer(t.dataset.id,{fill:t.checked});
   if(t.dataset.act==='cfg') setCfg(t.dataset.k,+t.value);
 });
 app.addEventListener('keydown',e=>{if(e.target.dataset?.act==='rename'&&e.key==='Enter')e.target.blur()});
@@ -846,7 +861,7 @@ function subscribe(fs,db){
     if(s.exists()&&!S.players[UID]) setTimeout(()=>{const el=document.getElementById('jn-name');if(el&&!el.value)el.focus()},60);
   },err);
   onSnapshot(collection(db,'squads',SID,'players'),s=>{S.players={};s.forEach(d=>S.players[d.id]=d.data());render()},err);
-  onSnapshot(query(collection(db,'squads',SID,'games'),orderBy('at','desc'),limit(300)),s=>{S.games={};s.forEach(d=>S.games[d.id]=d.data());render()},err);
+  onSnapshot(query(collection(db,'squads',SID,'games'),orderBy('at','desc')),s=>{S.games={};s.forEach(d=>S.games[d.id]=d.data());render()},err);
   onSnapshot(doc(db,'squads',SID,'live','draft'),s=>{S.live=s.exists()?s.data():{active:[],draft:null};render()},err);
 }
 </script>

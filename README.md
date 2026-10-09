@@ -113,6 +113,7 @@ Firebase blocks sign-in from domains it doesn't know.
 - **Rotation:** roles you played in recent games cost extra, with the most recent games counting most. Repeating a role you dislike costs much more than repeating your main.
 - **Fairness ("Owed"):** players who've recently had off-roles get more weight in the next draft.
 - **Results:** W/L is kept as your squad's record only. It never changes who plays what.
+- **Fill:** a player can tick **Fill** on their card. Their ranking is ignored and the draft gives them whichever role leaves everyone else happiest (usually the role nobody wants). Fill games don't add to their Owed meter, but they still count for rotation.
 - The app tries all 120 ways to assign roles and picks the fairest. **Another fair option** cycles through ones that are almost as good. Tap two players to swap them by hand.
 
 The captain can tune all of this under **Draft settings**.
@@ -144,6 +145,8 @@ Incognito tabs share one private session, so they all count as the same player. 
 Paste the address into each new tab rather than using "Duplicate tab" (duplicating copies the player). Test mode doesn't remember your name between squads. Delete test squads when you're done.
 
 ## Things to know
+
+- **Game history is kept forever.** Every game stays in Firebase, and the page loads all of them. The draft only uses the most recent ones (Memory, default 8). Each page open reads every game once, which stays far inside Firebase's free 50,000 reads a day for years at a few sessions a week.
 
 - **Guests are tied to their browser.** If someone clears site data or opens the link on a new device, they show up as a new player. Fix: use **Keep me on other devices (Google)** at the bottom of the page (needs Google enabled in step 3). This matters most for the captain, since captain rights belong to that sign-in.
 - **Updating the app:** edit `index.html`, then upload or push it again. GitHub Pages redeploys in about a minute. Squad data lives in Firebase, so it isn't affected.
