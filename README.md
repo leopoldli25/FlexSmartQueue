@@ -113,6 +113,7 @@ Firebase blocks sign-in from domains it doesn't know.
 - **Rotation:** roles you played in recent games cost extra, with the most recent games counting most. Repeating a role you dislike costs much more than repeating your main.
 - **Fairness ("Owed"):** players who've recently had off-roles get more weight in the next draft.
 - **Results:** W/L is kept as your squad's record only. It never changes who plays what.
+- **Memory:** how many recent games count (default 8). Slide it all the way to **∞** for lifetime mode: the Owed meter weighs every game ever equally, so whoever has had the worst luck overall gets priority. It evens things out a little more over months but reacts more slowly to a bad night. Rotation always looks at recent games.
 - **Fill:** a player can tick **Fill** on their card. Their ranking is ignored and the draft gives them whichever role leaves everyone else happiest (usually the role nobody wants). Fill games don't add to their Owed meter, but they still count for rotation.
 - The app tries all 120 ways to assign roles and picks the fairest. **Another fair option** cycles through ones that are almost as good. Tap two players to swap them by hand.
 

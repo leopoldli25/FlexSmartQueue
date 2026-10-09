@@ -279,7 +279,8 @@ function rankOf(p,role){const i=(p?.prefs||ROLES).indexOf(role);return i<0?4:i}
 function sortedGames(st){return Object.entries(st.games).map(([id,g])=>({id,...g})).sort((a,b)=>b.at-a.at)}
 
 function profile(st,pid){
-  const p=st.players[pid], N=st.cfg.window|0||8;
+  // window 0 = infinite: Owed weighs every game ever equally (lifetime luck); rotation still fades naturally
+  const p=st.players[pid], INF=st.cfg.window===0, N=INF?Infinity:(st.cfg.window|0||8);
   const all=sortedGames(st).filter(g=>g.lineup&&g.lineup[pid]);
   const h=all.slice(0,N);
   const rep={};ROLES.forEach(r=>rep[r]=0);
@@ -288,7 +289,7 @@ function profile(st,pid){
   let debt=0,wsum=0;
   all.filter(g=>!g.fill?.[pid]).slice(0,N).forEach((g,k)=>{
     const rk=g.picks?.[pid]??rankOf(p,g.lineup[pid]);
-    const w=Math.pow(.8,k); debt+=PREF[rk]*w; wsum+=w;
+    const w=INF?1:Math.pow(.8,k); debt+=PREF[rk]*w; wsum+=w;
   });
   debt=debt/(wsum+1);   // shrinks toward 0 when there is little history
   return {debt,rep,h};
@@ -680,12 +681,16 @@ function render(){
 
   /* tuning */
   const c=st.cfg;
-  const sl=(k,label,min,max,step,help)=>`<div class="slider"><label for="cfg-${k}">${label}<span class="muted">${c[k]}</span></label><input type="range" id="cfg-${k}" min="${min}" max="${max}" step="${step}" value="${c[k]}" data-act="cfg" data-k="${k}" ${cap?'':'disabled'}><p>${help}</p></div>`;
+  // Memory slider: the last notch (21) means infinite, stored as window 0
+  const shown=k=>k==='window'&&c.window===0?'∞':c[k], pos=k=>k==='window'&&c.window===0?21:c[k];
+  const sl=(k,label,min,max,step,help)=>`<div class="slider"><label for="cfg-${k}">${label}<span class="muted">${shown(k)}</span></label><input type="range" id="cfg-${k}" min="${min}" max="${max}" step="${step}" value="${pos(k)}" data-act="cfg" data-k="${k}" ${cap?'':'disabled'}><p>${help}</p></div>`;
   const tune=`<section class="panel"><details class="tune"><summary>Draft settings</summary><div class="sliders">
     ${cap?'':'<p class="locked" style="margin:0">Only the squad captain can change these.</p>'}
     ${sl('wRep','Rotation strength',0,3,.25,'How hard the draft pushes people off a role they just played.')}
     ${sl('wFair','Fairness priority',0,3,.25,'How much extra say people get after a run of bad picks.')}
-    ${sl('window','Memory (games)',3,20,1,'How many recent games count for rotation and fairness.')}
+    ${sl('window','Memory (games)',3,21,1,c.window===0
+      ?'∞: the Owed meter counts every game ever, equally. Whoever has had the worst luck overall gets priority. Rotation still looks at recent games.'
+      :'How many recent games count for rotation and fairness. Slide all the way right for ∞ (lifetime).')}
     ${cap?'<button class="btn sm ghost" data-act="resetCfg" style="justify-self:start">Reset to defaults</button>':''}</div></details></section>`;
 
   /* delete squad (captain only) */
@@ -748,7 +753,7 @@ app.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.act==='rename') rename(t.dataset.id,t.value);
   if(t.dataset.act==='fill') savePlayer(t.dataset.id,{fill:t.checked});
-  if(t.dataset.act==='cfg') setCfg(t.dataset.k,+t.value);
+  if(t.dataset.act==='cfg') setCfg(t.dataset.k,t.dataset.k==='window'&&+t.value===21?0:+t.value);
 });
 app.addEventListener('keydown',e=>{if(e.target.dataset?.act==='rename'&&e.key==='Enter')e.target.blur()});
 app.addEventListener('focusout',()=>{setTimeout(()=>{if(pendingRender)render()},0)});
